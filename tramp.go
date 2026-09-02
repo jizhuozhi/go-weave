@@ -12,16 +12,26 @@ package weave
 // delegation target — through the receiver, so the same slots serve every
 // interface; only the methods-per-interface count is bounded.
 
-import "unsafe"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // newTrampoline returns the code pointer for method index m.Index.
 func newTrampoline(m *Method) unsafe.Pointer {
 	if !fastTrampoline {
 		panic("weave: dynamic proxies are only supported on amd64 and arm64")
 	}
-	if !m.fitsFastPath() {
+	l := m.layout
+	if len(l.stackPtrOffs) > 0 {
 		panic("weave: method " + m.Name + " " + m.Type.String() +
-			" spills arguments or results to the stack, which the fixed trampoline cannot express")
+			" passes pointers in its stack-assigned arguments, which the trampoline cannot keep visible to the collector;" +
+			" restructure the signature so pointer arguments stay within the register file")
+	}
+	if l.stackBytes > stackWindow {
+		panic(fmt.Sprintf("weave: method %s needs %d bytes of stack argument area, more than the trampoline window of %d;"+
+			" raise stackWindow in gen and the redial frame, and run go generate",
+			m.Name+" "+m.Type.String(), l.stackBytes, stackWindow))
 	}
 	return fastStub(m.Index)
 }

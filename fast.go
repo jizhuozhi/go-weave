@@ -11,27 +11,19 @@ import (
 	"unsafe"
 )
 
-// callState is the per-call scratch state, pooled: the Invocation and the
-// register spill area it points at. Keeping the register area off the
-// goroutine stack also makes it immune to stack moves: a stack growth inside
-// an interceptor would leave a stack-allocated regBuf dangling.
+// callState is the per-call scratch state, pooled: the Invocation, the
+// register spill area it points at, and the copy of the method's stack
+// argument area. Keeping all of it off the goroutine stack also makes it
+// immune to stack moves: a stack growth inside an interceptor would leave
+// stack-allocated state dangling.
 type callState struct {
-	inv   Invocation
-	regs  regBuf
-	saved regBuf // argument register snapshot for the fast path of callTarget
+	inv      Invocation
+	regs     regBuf
+	saved    regBuf            // argument register snapshot for the fast path of callTarget
+	stackBuf [stackWindow]byte // copy of the caller's stack argument area
 }
 
 var statePool = sync.Pool{New: func() any { return new(callState) }}
-
-// fitsFastPath reports whether the method can be expressed by the fixed
-// register signature of the generated trampolines: every argument and every
-// result must fit in the architecture's register file, with nothing spilling
-// to the caller's stack argument area. Methods that do not fit are rejected at
-// proxy construction time.
-func (m *Method) fitsFastPath() bool {
-	l := m.layout
-	return l.stackCallArgsSize == 0 && l.ret.stackBytes == l.retOffset
-}
 
 // regBuf holds the raw argument and result registers for the duration of a call.
 //
@@ -56,11 +48,13 @@ func memcpy(dst, src unsafe.Pointer, n uintptr) {
 	copy(unsafe.Slice((*byte)(dst), n), unsafe.Slice((*byte)(src), n))
 }
 
-// stepAddr resolves the memory a step reads from or writes to. Every step of a
-// fast path call is register resident (fitsFastPath rejects the rest), so a
-// stack step here is unreachable.
-func stepAddr(st step, regs *regBuf) unsafe.Pointer {
+// stepAddr resolves the memory a step reads from or writes to. Stack steps
+// are relative to the base of the stack argument area, which dispatch points
+// at the pooled copy; register steps at the register spill area.
+func stepAddr(st step, regs *regBuf, stack unsafe.Pointer) unsafe.Pointer {
 	switch st.kind {
+	case stepStack:
+		return add(stack, st.stkOff)
 	case stepIntReg, stepPointer:
 		return unsafe.Pointer(&regs.ints[st.ireg])
 	case stepFloatReg:
@@ -69,13 +63,14 @@ func stepAddr(st step, regs *regBuf) unsafe.Pointer {
 	panic("weave: bad abi step")
 }
 
-// materializeArgs turns the raw register spill area into []reflect.Value.
+// materializeArgs turns the raw register spill area and stack argument area
+// copy into []reflect.Value.
 //
-// Arguments that live in exactly one register are described in place, with no
-// copy at all. Arguments spread over several registers are gathered into a
-// temporary []byte: the collector ignores that buffer, which is safe because
-// every byte in it is a copy of data that is still live in the argument
-// register snapshot, whose ptrs mirror the collector does scan.
+// Arguments that live in exactly one register or one stack slot are described
+// in place, with no copy at all. Arguments spread over several registers are
+// gathered into a temporary []byte: the collector ignores that buffer, which
+// is safe because every byte in it is a copy of data that is still live in
+// the argument register snapshot, whose ptrs mirror the collector does scan.
 func (c *Invocation) materializeArgs() []reflect.Value {
 	m := c.Method
 	l := m.layout
@@ -92,14 +87,14 @@ func (c *Invocation) materializeArgs() []reflect.Value {
 		case t.Size() == 0:
 			out[i] = reflect.Zero(t)
 		case len(steps) == 1:
-			out[i] = reflect.NewAt(t, stepAddr(steps[0], regs)).Elem()
+			out[i] = reflect.NewAt(t, stepAddr(steps[0], regs, c.stack)).Elem()
 		default:
 			if buf == nil {
 				buf = make([]byte, l.gatherBytes)
 			}
 			dst := unsafe.Pointer(&buf[l.argGather[i]])
 			for _, st := range steps {
-				memcpy(add(dst, st.offset), stepAddr(st, regs), st.size)
+				memcpy(add(dst, st.offset), stepAddr(st, regs, c.stack), st.size)
 			}
 			out[i] = reflect.NewAt(t, dst).Elem()
 		}
@@ -107,7 +102,8 @@ func (c *Invocation) materializeArgs() []reflect.Value {
 	return out
 }
 
-// storeResults writes the results back into the register spill area.
+// storeResults writes the results back into the register spill area and, for
+// stack-assigned results, the stack area copy.
 func (c *Invocation) storeResults(rets []reflect.Value) {
 	if c.direct && rets == nil {
 		// Register fast path: the target's results are already in the result
@@ -122,7 +118,7 @@ func (c *Invocation) storeResults(rets []reflect.Value) {
 		if i < len(rets) && rets[i].IsValid() && rets[i].Type().AssignableTo(t) {
 			v = rets[i]
 		}
-		scatterValue(v, t, m.layout.ret.stepsForValue(i), c.regs)
+		scatterValue(v, t, m.layout.ret.stepsForValue(i), c.regs, c.stack)
 	}
 }
 
@@ -163,12 +159,12 @@ func writeScalar(dst unsafe.Pointer, v reflect.Value, size uintptr) {
 	writeWord(dst, x, size)
 }
 
-// scatterValue copies one result out of v into the registers the ABI assigned
-// to it. Fast path results are register resident (fitsFastPath guarantees it).
-func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf) {
+// scatterValue copies one result out of v into the registers or stack slots
+// the ABI assigned to it.
+func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, stack unsafe.Pointer) {
 	if len(steps) == 1 {
 		st := steps[0]
-		dst := stepAddr(st, regs)
+		dst := stepAddr(st, regs, stack)
 		switch st.kind {
 		case stepFloatReg:
 			if st.size == 8 {
@@ -180,42 +176,50 @@ func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf) {
 		case stepIntReg, stepPointer:
 			writeScalar(dst, v, st.size)
 			return
+		case stepStack:
+			memcpy(dst, valueMem(v, t), st.size)
+			return
 		}
 	}
 
 	// Multi register results that can be taken apart without allocating.
-	if len(steps) >= 2 {
+	if len(steps) >= 2 && steps[0].kind != stepStack {
 		switch t.Kind() {
 		case reflect.String:
 			s := v.String()
 			h := (*[2]uintptr)(unsafe.Pointer(&s))
-			writeWord(stepAddr(steps[0], regs), h[0], steps[0].size)
-			writeWord(stepAddr(steps[1], regs), h[1], steps[1].size)
+			writeWord(stepAddr(steps[0], regs, stack), h[0], steps[0].size)
+			writeWord(stepAddr(steps[1], regs, stack), h[1], steps[1].size)
 			return
 		case reflect.Slice:
 			h := [3]uintptr{v.Pointer(), uintptr(v.Len()), uintptr(v.Cap())}
 			for i := range steps {
-				writeWord(stepAddr(steps[i], regs), h[i], steps[i].size)
+				writeWord(stepAddr(steps[i], regs, stack), h[i], steps[i].size)
 			}
 			return
 		case reflect.Complex64, reflect.Complex128:
 			x := v.Complex()
 			p := (*[2]float64)(unsafe.Pointer(&x))
-			*(*float64)(stepAddr(steps[0], regs)) = p[0]
-			*(*float64)(stepAddr(steps[1], regs)) = p[1]
+			*(*float64)(stepAddr(steps[0], regs, stack)) = p[0]
+			*(*float64)(stepAddr(steps[1], regs, stack)) = p[1]
 			return
 		}
 	}
 
 	// Everything else: one contiguous copy, sliced up.
-	src := v
-	if !src.CanAddr() {
-		tmp := reflect.New(t).Elem()
-		tmp.Set(v)
-		src = tmp
-	}
-	base := src.Addr().UnsafePointer()
+	base := valueMem(v, t)
 	for _, st := range steps {
-		memcpy(stepAddr(st, regs), add(base, st.offset), st.size)
+		memcpy(stepAddr(st, regs, stack), add(base, st.offset), st.size)
 	}
+}
+
+// valueMem returns the address of v's storage, copying it into a temporary
+// when v is not addressable.
+func valueMem(v reflect.Value, t reflect.Type) unsafe.Pointer {
+	if v.CanAddr() {
+		return v.Addr().UnsafePointer()
+	}
+	tmp := reflect.New(t).Elem()
+	tmp.Set(v)
+	return tmp.Addr().UnsafePointer()
 }

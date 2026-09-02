@@ -2,3 +2,4 @@
 *.out
 *.prof
 dist/
+dbg_test.go

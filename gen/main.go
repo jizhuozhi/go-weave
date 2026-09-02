@@ -57,7 +57,7 @@ func gen(filename, tag string, ni, nf int) {
 		// from dispatch down stays fully instrumented.
 		b.WriteString("//go:nosplit\n//go:norace\n")
 		fmt.Fprintf(&b, "func stub%d(%s) (%s) {\n", k, params(ni, nf), results(ni, nf))
-		fmt.Fprintf(&b, "\treturn dispatch(%d, %s, %s)\n", k, seq(ni, "a"), seq(nf, "f"))
+		fmt.Fprintf(&b, "\treturn dispatch(%d, %s, %s, unsafe.Pointer(&s0))\n", k, seq(ni, "a"), seq(nf, "f"))
 		b.WriteString("}\n\n")
 	}
 
@@ -80,12 +80,19 @@ func seq(n int, prefix string) string {
 	return strings.Join(p, ", ")
 }
 
-// params returns "a0..aN uintptr, f0..fM float64". The integer registers are
-// typed uintptr so that the stub's spill of the (possibly garbage) registers
-// into its frame is never scanned as pointers; the dispatcher copies the
-// registers that actually hold pointers into GC-visible storage.
+// params returns "a0..aN uintptr, f0..fM float64, s0 [stackWindow]byte". The
+// integer registers are typed uintptr so that the stub's spill of the
+// (possibly garbage) registers into its frame is never scanned as pointers;
+// the dispatcher copies the registers that actually hold pointers into
+// GC-visible storage.
+//
+// The trailing stack parameter is the capture window for the method's
+// stack-assigned arguments and results: the itab call site places them in its
+// outgoing area at the same offset where a stack parameter of the callee
+// lives, so &s0 is the base of that area regardless of how much of it the
+// method actually uses. The window itself is never written by the stub.
 func params(ni, nf int) string {
-	return seq(ni, "a") + " uintptr, " + seq(nf, "f") + " float64"
+	return seq(ni, "a") + " uintptr, " + seq(nf, "f") + " float64, s0 [stackWindow]byte"
 }
 
 func results(ni, nf int) string {

@@ -111,18 +111,99 @@ func TestBasic(t *testing.T) {
 	})
 }
 
-// A method whose arguments spill to the stack cannot be expressed by the fixed
-// register trampoline and is rejected at proxy construction time.
-func TestStackArgRejected(t *testing.T) {
-	type wide interface {
-		Many(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17 int) int
+// --- stack argument area ----------------------------------------------------
+
+type Big struct{ V [24]int } // 192 bytes: stack-assigned on every architecture
+
+type Wide interface {
+	// Sum18 spills arguments past the register file on every supported
+	// architecture (receiver consumes one integer register, leaving 15 on
+	// arm64 and 8 on amd64).
+	Sum18(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17 int) int
+	TakeBig(b Big) int
+	// Fan20 spills results past the result register file.
+	Fan20(a int) (r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19 int)
+}
+
+func TestStackArgs(t *testing.T) {
+	forBackend(t, func(t *testing.T) {
+		p := New[Wide](wideImpl{})
+
+		if got := p.Sum18(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17); got != 153 {
+			t.Fatalf("Sum18 = %d, want 153", got)
+		}
+
+		big := Big{}
+		for i := range big.V {
+			big.V[i] = i
+		}
+		if got := p.TakeBig(big); got != 24*23/2 {
+			t.Fatalf("TakeBig = %d", got)
+		}
+
+		r0, r1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, r18, r19 := p.Fan20(7)
+		if r0 != 7 || r1 != 8 || r18 != 25 || r19 != 26 {
+			t.Fatalf("Fan20 edges = %d %d %d %d", r0, r1, r18, r19)
+		}
+	})
+}
+
+type wideImpl struct{}
+
+func (wideImpl) Sum18(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17 int) int {
+	return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17
+}
+
+func (wideImpl) TakeBig(b Big) int {
+	n := 0
+	for _, v := range b.V {
+		n += v
+	}
+	return n
+}
+
+func (wideImpl) Fan20(a int) (r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19 int) {
+	vs := []*int{&r0, &r1, &r2, &r3, &r4, &r5, &r6, &r7, &r8, &r9, &r10, &r11, &r12, &r13, &r14, &r15, &r16, &r17, &r18, &r19}
+	for i := range vs {
+		*vs[i] = a + i
+	}
+	return
+}
+
+// TestStackArgInterceptors exercises argument inspection and rewriting for a
+// stack-spilling method: materialisation reads from the pooled stack buffer,
+// modifications flow through the reflect fallback path.
+func TestStackArgInterceptors(t *testing.T) {
+	forBackend(t, func(t *testing.T) {
+		seen := -1
+		p := New[Wide](wideImpl{}, func(c *Invocation) []reflect.Value {
+			seen = int(c.Arg(17).Int())
+			c.SetArg(0, reflect.ValueOf(100))
+			return c.Proceed()
+		})
+		if got := p.Sum18(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17); got != 100+1+2+3+4+5+6+7+8+9+10+11+12+13+14+15+16+17 {
+			t.Fatalf("Sum18 rewritten = %d", got)
+		}
+		if seen != 17 {
+			t.Fatalf("Arg(17) = %d", seen)
+		}
+	})
+}
+
+// Pointer arguments that spill to the stack argument area are rejected: the
+// caller's outgoing area is described by the trampoline's byte window and is
+// never scanned, so a pointer there would be invisible to the collector.
+func TestStackPointerArgRejected(t *testing.T) {
+	type bad interface {
+		ManyPtrs(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15 string) int
 	}
 	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected a panic for a stack-spilling method")
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic for pointer arguments on the stack area")
 		}
 	}()
-	New[wide](nil)
+	New[bad](nil)
 }
 
 func TestInterceptors(t *testing.T) {

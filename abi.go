@@ -219,6 +219,16 @@ type abiLayout struct {
 	argGather   []uintptr
 	gatherBytes uintptr
 
+	// stackPtrOffs lists the word offsets, relative to the base of the stack
+	// argument area, of every pointer inside a stack-assigned argument.
+	// Stack arguments live in the caller's outgoing area, whose GC
+	// description belongs to the trampoline — a plain byte window that the
+	// collector never scans. Pointer arguments there would be invisible
+	// during a window that no Go code can close (the runtime special-cases
+	// its own reflect stubs by name to solve exactly this), so layouts with
+	// pointer-bearing stack arguments are rejected outright.
+	stackPtrOffs []uintptr
+
 	// ptrMask has bit i set when the i'th integer argument register holds a
 	// pointer. The dispatcher copies only those registers into a GC-visible
 	// mirror, so that the collector never scans a plain integer as a pointer.
@@ -247,12 +257,24 @@ func newABILayout(ft reflect.Type) *abiLayout {
 		l.ret.addArg(ft.Out(i))
 	}
 
-	l.stackBytes = alignUp(l.retOffset+l.ret.stackBytes, ptrSize)
+	// ret.stackBytes already counts from retOffset, so the total area is
+	// simply its final value; adding retOffset again would double-count it
+	// and make the result copy-back write past the caller's reservation.
+	l.stackBytes = alignUp(l.ret.stackBytes, ptrSize)
 
 	// Which integer argument registers hold pointers.
 	for _, st := range l.call.steps {
 		if st.kind == stepPointer {
 			l.ptrMask |= 1 << uint(st.ireg)
+		}
+	}
+
+	// Which words of the stack-assigned arguments hold pointers; see
+	// abiLayout.stackPtrOffs for why the mere presence of any is fatal.
+	for i := 0; i < ft.NumIn(); i++ {
+		steps := l.call.stepsForValue(i + 1) // +1 skips the receiver
+		if len(steps) == 1 && steps[0].kind == stepStack {
+			ptrOffsets(ft.In(i), steps[0].stkOff, &l.stackPtrOffs)
 		}
 	}
 
@@ -279,3 +301,31 @@ func newABILayout(ft reflect.Type) *abiLayout {
 // argStepCount is the number of values described by call, i.e. one receiver
 // plus one per argument.
 func (l *abiLayout) argStepCount() int { return len(l.call.valueStart) }
+
+// ptrOffsets appends the word offsets of every pointer inside a value of type
+// t located at off inside its enclosing value.
+func ptrOffsets(t reflect.Type, off uintptr, out *[]uintptr) {
+	switch t.Kind() {
+	case reflect.Pointer, reflect.Chan, reflect.Map, reflect.Func, reflect.UnsafePointer:
+		*out = append(*out, off)
+	case reflect.String:
+		*out = append(*out, off) // the data word; the length is not a pointer
+	case reflect.Interface:
+		*out = append(*out, off, off+ptrSize)
+	case reflect.Slice:
+		*out = append(*out, off) // the data word
+	case reflect.Array:
+		if t.Len() == 0 {
+			return
+		}
+		esz := t.Elem().Size()
+		for i := 0; i < t.Len(); i++ {
+			ptrOffsets(t.Elem(), off+uintptr(i)*esz, out)
+		}
+	case reflect.Struct:
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			ptrOffsets(f.Type, off+f.Offset, out)
+		}
+	}
+}

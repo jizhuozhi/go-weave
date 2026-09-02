@@ -16,7 +16,8 @@ const fastTrampoline = true
 // code pointer per slot — a bare pointer with no closure context, which is
 // exactly what itab.Fun[k] expects.
 type fastFunc = func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15 uintptr,
-	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15 float64) (
+	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15 float64,
+	s0 [stackWindow]byte) (
 	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 unsafe.Pointer,
 	g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 float64)
 
@@ -46,7 +47,8 @@ func redial(fun unsafe.Pointer, regs *regBuf)
 //
 //go:nocheckptr
 func dispatch(idx int, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15 uintptr,
-	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15 float64) (
+	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15 float64,
+	stack unsafe.Pointer) (
 	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 unsafe.Pointer,
 	g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 float64) {
 
@@ -81,9 +83,30 @@ func dispatch(idx int, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a1
 	regs.floats = [floatArgRegs]float64{f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15}
 	regs.ptrs = prePtrs
 
+	// Stack-assigned arguments: copy them out of the caller's outgoing area
+	// into the pooled buffer. The raw stack pointer must not be stored in
+	// the heap Invocation — a stack move inside an interceptor would leave
+	// it dangling — while this plain local is adjusted by copystack. The
+	// area is pointer-free by construction (layouts with pointer-bearing
+	// stack arguments are rejected), so the copy needs no GC mirror.
+	var stk unsafe.Pointer
+	if m.layout.stackBytes != 0 {
+		copy(st.stackBuf[:m.layout.stackCallArgsSize],
+			unsafe.Slice((*byte)(stack), m.layout.stackCallArgsSize))
+		stk = unsafe.Pointer(&st.stackBuf[0])
+	}
+
 	c := &st.inv
-	*c = Invocation{Proxy: p, Method: m, chain: p.chain, regs: regs, snap: &st.saved}
+	*c = Invocation{Proxy: p, Method: m, chain: p.chain, regs: regs, snap: &st.saved, stack: stk}
 	c.storeResults(c.Proceed())
+
+	if m.layout.stackBytes != 0 {
+		// Copy the stack-assigned results from the buffer back into the
+		// caller's outgoing area.
+		l := m.layout
+		n := l.stackBytes - l.retOffset
+		copy(unsafe.Slice((*byte)(add(stack, l.retOffset)), n), st.stackBuf[l.retOffset:l.stackBytes])
+	}
 
 	// No defer on the Put, and no call after this point: the return values
 	// below are unsafe.Pointers converted from raw uintptr results, and

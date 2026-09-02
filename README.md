@@ -178,11 +178,16 @@ collector *does* scan — before the first allocation. Verified with
 
 ## Limitations
 
-- **Stack-passed arguments or results are rejected.** A method that needs more
-  than the register file (16 int + 16 float on arm64, 9 + 15 on amd64), or that
-  passes a large struct by value, panics at proxy construction time with a
-  clear message. Raising the limit requires runtime code generation, which is
-  exactly what this design avoids.
+- **Stack-passed arguments and results are supported** up to 480 bytes per
+  method (arguments or results spilling past the register file, big structs by
+  value), as long as the spilled part is pointer-free. A spilled *pointer*
+  argument would be invisible to the collector — the stack area's GC
+  description belongs to the trampoline's byte window, and the preemption
+  window between the itab call and the dispatcher's first instructions cannot
+  be closed from user code (the runtime special-cases its own reflect stubs
+  by name for exactly this). Pointer-bearing spill layouts are rejected at
+  proxy construction with a clear error; keep pointers within the register
+  file (16 int words on arm64 after the receiver, 8 on amd64).
 - **Interfaces can have at most 128 methods** — slot k serves method k of every
   interface, so the bound is per-interface, not process-wide. Raise `slots` in
   `gen/main.go` and run `go generate ./...` for more.

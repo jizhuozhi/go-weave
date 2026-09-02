@@ -73,6 +73,10 @@ type Invocation struct {
 	// arguments can be read out of it lazily.
 	regs *regBuf
 
+	// stack is the base of the stack argument area copy for methods whose
+	// arguments or results spill past the register file; nil otherwise.
+	stack unsafe.Pointer
+
 	// snap is a snapshot of the argument registers taken before the register
 	// fast path of callTarget reissues the call: the call's results land in
 	// the same registers, destroying the arguments.
@@ -151,7 +155,9 @@ func (c *Invocation) callTarget() []reflect.Value {
 		}
 		return m.targetFn.Call(c.Args())
 	}
-	if c.args == nil {
+	// Register fast path: only for methods that pass nothing on the stack —
+	// redial replays registers alone.
+	if c.args == nil && m.layout.stackBytes == 0 {
 		if c.hasSnap {
 			// A previous Proceed already overwrote the argument registers
 			// with results; replay from the snapshot.
@@ -173,8 +179,11 @@ func (c *Invocation) callTarget() []reflect.Value {
 		c.direct = true
 		return nil
 	}
+	// Reflect fallback: the arguments were materialised (an interceptor
+	// touched them) or the method passes arguments or results on the stack,
+	// which redial cannot replay.
 	if m.IsVariadic() {
-		return m.targetFn.CallSlice(c.args)
+		return m.targetFn.CallSlice(c.Args())
 	}
-	return m.targetFn.Call(c.args)
+	return m.targetFn.Call(c.Args())
 }

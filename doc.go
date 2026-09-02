@@ -103,9 +103,16 @@
 //
 // # Limitations
 //
-//   - A method whose arguments or results spill to the stack — more than the
-//     register file holds, or one big struct — cannot be expressed by the
-//     fixed trampoline signature and is rejected when the proxy is built.
+//   - Arguments and results that spill past the register file into the
+//     caller's stack argument area are supported up to 480 bytes per method
+//     (stackWindow), provided the spilled part contains no pointers. The
+//     stack area's GC description belongs to the trampoline's byte window
+//     and is never scanned, so a pointer there would be invisible to the
+//     collector during a preemption window no Go code can close — the
+//     runtime solves this for its own reflect stubs with name-based special
+//     cases that user packages cannot obtain. Pointer-bearing spill
+//     layouts are therefore rejected at proxy construction; restructure
+//     such signatures so pointers stay within the register file.
 //   - There are 128 trampoline slots, one per interface method index, so an
 //     interface may have at most 128 methods; the number of interfaces and
 //     proxies is unbounded. Raise gen/main.go's slots constant and run
