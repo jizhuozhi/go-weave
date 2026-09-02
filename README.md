@@ -19,8 +19,11 @@ target but runs your interceptors around every method call — Go's answer to
 `java.lang.reflect.Proxy`, built on the observation that an interface value is
 just `(itab, data)` and nothing stops you from forging the itab yourself.
 
-Supports **arm64** and **amd64**. Requires Go 1.24 (the package reads unexported
-runtime layouts through `unsafe`).
+Supports **arm64** and **amd64**, verified on every Go minor version from
+**1.18** through **1.24** (the register ABI's debut on both architectures).
+The runtime layouts the package forges are validated at init against a real
+itab, so an unsupported future Go fails at startup with a clear panic instead
+of corrupting memory.
 
 ## What you get
 
@@ -186,8 +189,10 @@ collector *does* scan — before the first allocation. Verified with
 - **`any(proxy).(T)` fails.** The proxy passes as `T` end to end, but asserting
   back from an `any` goes through `getitab`, which requires the concrete type
   to statically implement `T`. Use the value directly.
-- **Pinned to Go 1.24 layouts** (`abi.Type`, `abi.InterfaceType`, `abi.ITab`).
-  This is an experiment, not production infrastructure.
+- **Runtime layout dependencies**, mitigated: the forged structures
+  (`abi.Type`, interface headers, itab) are validated at init against a real
+  runtime itab, so an unsupported Go version fails loudly at startup. CI
+  guards every minor version 1.18–1.24 on amd64 and arm64.
 
 ## Development
 

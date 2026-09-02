@@ -113,9 +113,13 @@
 //   - The proxy passes as T end to end, but `x.(T)` after converting the proxy
 //     to `any` fails: that assertion goes through getitab, which requires the
 //     concrete type to statically implement T.
-//   - The package pokes at unexported runtime data structures through unsafe
-//     and is pinned to the Go 1.24 layout of abi.Type / abi.InterfaceType /
-//     abi.ITab. Treat it as an experiment, not as production infrastructure.
+//   - The package pokes at unexported runtime data structures through unsafe.
+//     The layouts it depends on (abi.Type, abi.InterfaceType, the itab) have
+//     been stable since Go 1.18 introduced the register ABI on arm64, and an
+//     init-time self-check validates every offset against a real, runtime
+//     built itab — so a future layout change fails at startup with a clear
+//     panic instead of corrupting memory. The compatibility range is Go
+//     1.18 through 1.24, guarded by CI across every minor version.
 package weave
 
 //go:generate go run ./gen

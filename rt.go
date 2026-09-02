@@ -2,6 +2,7 @@ package weave
 
 import (
 	"reflect"
+	"runtime"
 	"unsafe"
 )
 
@@ -153,3 +154,40 @@ func targetITab(target any, ifaceType reflect.Type) (tab *itab, data unsafe.Poin
 	i := (*iface)(unsafe.Pointer(slot.UnsafeAddr()))
 	return i.tab, i.data, true
 }
+
+// --- layout self-check ------------------------------------------------------
+//
+// The package forges runtime data structures whose layouts carry no
+// compatibility promise. At init, every offset the forgery depends on is
+// validated against a real, runtime-built itab, so an unsupported Go version
+// fails at startup with a clear panic instead of corrupting memory later.
+
+type itabProbe struct{ marker int }
+
+func (p *itabProbe) Probe() int { return p.marker }
+
+type itabProbeIface interface{ Probe() int }
+
+func init() {
+	var v itabProbeIface = &itabProbe{marker: 42}
+	real := (*iface)(unsafe.Pointer(&v)).tab
+
+	// itab.Inter must land on a type descriptor of interface kind, which
+	// pins both the itab header and the interfaceType embedding.
+	if real.Inter == nil || real.Inter.Kind_ != uint8(reflect.Interface) {
+		panic("weave: itab.Inter offset mismatch; unsupported Go version, " + runtimeVersion())
+	}
+	// itab.Hash is specified to be a copy of the concrete type's hash, which
+	// pins the Hash fields of both itab and abiType.
+	if real.Hash != real.Type.Hash {
+		panic("weave: itab.Hash offset mismatch; unsupported Go version, " + runtimeVersion())
+	}
+	// For a pointer-receiver method, itab.Fun[0] is the method's own entry,
+	// which pins the Fun offset (the field the dispatch call jumps through).
+	fun := itabFun(real, 1, 0)
+	if fun == nil || uintptr(fun) != reflect.ValueOf((*itabProbe).Probe).Pointer() {
+		panic("weave: itab.Fun offset mismatch; unsupported Go version, " + runtimeVersion())
+	}
+}
+
+func runtimeVersion() string { return runtime.Version() }
