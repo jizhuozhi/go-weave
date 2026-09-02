@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # linux/amd64, linux/arm64, darwin/arm64.
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        # unsafeptr is off by design: the register plumbing converts between
+        # uintptr and unsafe.Pointer on purpose.
+        run: go vet -unsafeptr=false ./...
+      - name: test
+        run: go test ./...
+      - name: test -race
+        run: go test -race ./...
+      - name: GC stress
+        run: GODEBUG=clobberfree=1 go test -count=3 ./...
+
+  generated:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: go generate is idempotent
+        run: |
+          go generate ./...
+          git diff --exit-code -- stubs_gen_arm64.go stubs_gen_amd64.go
