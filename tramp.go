@@ -25,8 +25,9 @@ func newTrampoline(m *Method) unsafe.Pointer {
 	l := m.layout
 	if len(l.stackPtrOffs) > 0 {
 		panic("weave: method " + m.Name + " " + m.Type.String() +
-			" passes pointers in its stack-assigned arguments, which the trampoline cannot keep visible to the collector;" +
-			" restructure the signature so pointer arguments stay within the register file")
+			" passes pointers in its stack-assigned arguments, which the trampoline cannot keep visible to the collector." +
+			" Register assignment is positional: move pointer arguments earlier in the signature so they stay within the register file" +
+			" (the receiver consumes one; 15 integer words remain on arm64, 8 on amd64), or slim the signature down")
 	}
 	if l.stackBytes > stackWindow {
 		panic(fmt.Sprintf("weave: method %s needs %d bytes of stack argument area, more than the trampoline window of %d;"+
