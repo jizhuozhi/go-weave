@@ -57,7 +57,7 @@ func gen(filename, tag string, ni, nf int) {
 		// from dispatch down stays fully instrumented.
 		b.WriteString("//go:nosplit\n//go:norace\n")
 		fmt.Fprintf(&b, "func stub%d(%s) (%s) {\n", k, params(ni, nf), results(ni, nf))
-		fmt.Fprintf(&b, "\treturn dispatch(%d, %s, %s, unsafe.Pointer(&s0))\n", k, seq(ni, "a"), seq(nf, "f"))
+		fmt.Fprintf(&b, "\treturn Dispatch(%d, %s, %s, unsafe.Pointer(&s0))\n", k, seq(ni, "a"), seq(nf, "f"))
 		b.WriteString("}\n\n")
 	}
 

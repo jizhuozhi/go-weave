@@ -219,15 +219,21 @@ type abiLayout struct {
 	argGather   []uintptr
 	gatherBytes uintptr
 
-	// stackPtrOffs lists the word offsets, relative to the base of the stack
-	// argument area, of every pointer inside a stack-assigned argument.
-	// Stack arguments live in the caller's outgoing area, whose GC
-	// description belongs to the trampoline — a plain byte window that the
-	// collector never scans. Pointer arguments there would be invisible
-	// during a window that no Go code can close (the runtime special-cases
-	// its own reflect stubs by name to solve exactly this), so layouts with
-	// pointer-bearing stack arguments are rejected outright.
-	stackPtrOffs []uintptr
+	// stackPtrOffs lists the offsets, relative to the base of the stack
+	// argument area, of every pointer inside a stack-assigned argument, and
+	// retStackPtrOffs does the same for stack-assigned results.
+	//
+	// Stack arguments and results live in the caller's outgoing area, whose
+	// GC description belongs to the callee — the trampoline. The generic
+	// trampoline declares that area as a plain byte window, so a pointer
+	// travelling through it is invisible to the collector for a window no Go
+	// code can close: the write would have to happen before the trampoline's
+	// first instruction. A precise trampoline (see precise.go) instead
+	// declares the area word by word with the exact pointer shape, which
+	// makes those pointers visible from function entry. Methods that need
+	// one and do not have one are rejected at construction.
+	stackPtrOffs    []uintptr
+	retStackPtrOffs []uintptr
 
 	// ptrMask has bit i set when the i'th integer argument register holds a
 	// pointer. The dispatcher copies only those registers into a GC-visible
@@ -269,12 +275,20 @@ func newABILayout(ft reflect.Type) *abiLayout {
 		}
 	}
 
-	// Which words of the stack-assigned arguments hold pointers; see
-	// abiLayout.stackPtrOffs for why the mere presence of any is fatal.
+	// Which words of the stack argument area hold pointers, in either
+	// direction; see abiLayout.stackPtrOffs. A value is either wholly in
+	// registers or wholly on the stack, so a stack-assigned value is always
+	// a single step.
 	for i := 0; i < ft.NumIn(); i++ {
 		steps := l.call.stepsForValue(i + 1) // +1 skips the receiver
 		if len(steps) == 1 && steps[0].kind == stepStack {
 			ptrOffsets(ft.In(i), steps[0].stkOff, &l.stackPtrOffs)
+		}
+	}
+	for i := 0; i < ft.NumOut(); i++ {
+		steps := l.ret.stepsForValue(i)
+		if len(steps) == 1 && steps[0].kind == stepStack {
+			ptrOffsets(ft.Out(i), steps[0].stkOff, &l.retStackPtrOffs)
 		}
 	}
 
@@ -301,6 +315,39 @@ func newABILayout(ft reflect.Type) *abiLayout {
 // argStepCount is the number of values described by call, i.e. one receiver
 // plus one per argument.
 func (l *abiLayout) argStepCount() int { return len(l.call.valueStart) }
+
+// stackPointers reports whether any pointer travels through the caller's stack
+// argument area, in either direction. Such a method needs a precise
+// trampoline; the generic one cannot describe the area to the collector.
+func (l *abiLayout) stackPointers() bool {
+	return len(l.stackPtrOffs) != 0 || len(l.retStackPtrOffs) != 0
+}
+
+// shape is the identity of the precise trampoline this method needs: the
+// method index the trampoline dispatches to, plus the pointer shape of the
+// caller's stack argument area, word by word.
+//
+// Only the shape matters, not the types that produced it: a trampoline
+// declaring the right sequence of pointer and non-pointer words reproduces the
+// area byte for byte, because stack assignment is sequential and every pointer
+// is word aligned.
+func (l *abiLayout) shape(idx int) stubShape {
+	sh := stubShape{
+		index:    idx,
+		argWords: int(l.retOffset / ptrSize),
+		retWords: int((l.stackBytes - l.retOffset) / ptrSize),
+	}
+	if sh.argWords > stubMaxWords || sh.retWords > stubMaxWords {
+		panic("weave: stack argument area wider than a stub shape can describe")
+	}
+	for _, off := range l.stackPtrOffs {
+		sh.argPtrs |= 1 << (off / ptrSize)
+	}
+	for _, off := range l.retStackPtrOffs {
+		sh.retPtrs |= 1 << ((off - l.retOffset) / ptrSize)
+	}
+	return sh
+}
 
 // ptrOffsets appends the word offsets of every pointer inside a value of type
 // t located at off inside its enclosing value.

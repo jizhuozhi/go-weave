@@ -11,6 +11,10 @@ package weave
 // the interface. The dispatcher resolves the *Method — and with it the proxy's
 // delegation target — through the receiver, so the same slots serve every
 // interface; only the methods-per-interface count is bounded.
+//
+// Methods that move pointers through the caller's stack argument area need a
+// trampoline that describes that area precisely, which the generic one cannot;
+// see precise.go.
 
 import (
 	"fmt"
@@ -23,16 +27,25 @@ func newTrampoline(m *Method) unsafe.Pointer {
 		panic("weave: dynamic proxies are only supported on amd64 and arm64")
 	}
 	l := m.layout
-	if len(l.stackPtrOffs) > 0 {
-		panic("weave: method " + m.Name + " " + m.Type.String() +
-			" passes pointers in its stack-assigned arguments, which the trampoline cannot keep visible to the collector." +
-			" Register assignment is positional: move pointer arguments earlier in the signature so they stay within the register file" +
-			" (the receiver consumes one; 15 integer words remain on arm64, 8 on amd64), or slim the signature down")
-	}
 	if l.stackBytes > stackWindow {
 		panic(fmt.Sprintf("weave: method %s needs %d bytes of stack argument area, more than the trampoline window of %d;"+
 			" raise stackWindow in gen and the redial frame, and run go generate",
 			m.Name+" "+m.Type.String(), l.stackBytes, stackWindow))
 	}
-	return fastStub(m.Index)
+	if !l.stackPointers() {
+		// Nothing but plain data crosses the stack argument area, which is
+		// exactly what the generic trampoline's byte window describes.
+		return fastStub(m.Index)
+	}
+	sh := l.shape(m.Index)
+	if code := lookupStub(sh); code != nil {
+		return code
+	}
+	panic("weave: " + m.Name + " " + m.Type.String() +
+		" moves pointers through the caller's stack argument area (" + sh.String() + ")," +
+		" which the generic trampoline describes to the collector as pointer-free." +
+		"\nGenerate a precise trampoline for this interface — write weave.StubSource(pkg, ifaceType) into a" +
+		" file of your program and rebuild — or keep pointer arguments and results inside the register file:" +
+		" register assignment is positional, so moving pointer arguments to the front of the signature is" +
+		" often enough (the receiver takes one word, " + fmt.Sprint(intArgRegs-1) + " integer words remain).")
 }

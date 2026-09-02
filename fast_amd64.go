@@ -43,12 +43,17 @@ func fastStub(i int) unsafe.Pointer {
 // the stack, which fitsFastPath guarantees.
 func redial(fun unsafe.Pointer, regs *regBuf)
 
-// dispatch runs the interceptor chain on the raw register contents and returns
+// Dispatch runs the interceptor chain on the raw register contents and returns
 // the results in the same register positions. The receiver is the first
 // integer register, which is how interface calls pass it.
 //
+// Dispatch is exported only so that the precise trampolines StubSource
+// generates — which live in the caller's own package — can reach it. Its
+// signature is the architecture's register file and changes with the
+// architecture; nothing outside generated code should call it.
+//
 //go:nocheckptr
-func dispatch(idx int, a0, a1, a2, a3, a4, a5, a6, a7, a8 uintptr,
+func Dispatch(idx int, a0, a1, a2, a3, a4, a5, a6, a7, a8 uintptr,
 	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14 float64,
 	stack unsafe.Pointer) (
 	r0, r1, r2, r3, r4, r5, r6, r7, r8 unsafe.Pointer,
