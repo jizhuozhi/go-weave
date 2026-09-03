@@ -190,6 +190,28 @@ func TestStackArgInterceptors(t *testing.T) {
 	})
 }
 
+// Pointer arguments that spill to the stack argument area are rejected unless a
+// precise trampoline is registered for their shape: the generic trampoline
+// describes the caller's outgoing area as pointer-free, so a pointer there would
+// be invisible to the collector. The shape below (method 0, no stack results) is
+// deliberately one that no generated stub in this package covers.
+func TestStackPointerArgRejected(t *testing.T) {
+	type bad interface {
+		ManyPtrs(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15 string) int
+	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic for pointer arguments on the stack area")
+		}
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "StubSource") {
+			t.Errorf("panic should point at the generator, got: %v", r)
+		}
+	}()
+	New[bad](nil)
+}
+
 func TestInterceptors(t *testing.T) {
 	forBackend(t, func(t *testing.T) {
 		var log []string
