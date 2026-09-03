@@ -5,6 +5,7 @@
 package weave
 
 import (
+	"runtime"
 	"unsafe"
 )
 
@@ -139,7 +140,25 @@ func weaveStub_m0_a18_15555_r16_5555(
 	*(*uintptr)(unsafe.Add(base, 240)) = 0
 	*(*uintptr)(unsafe.Add(base, 256)) = 0
 
-	return Dispatch(0, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 = Dispatch(0, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	runtime.KeepAlive(w0)
+	runtime.KeepAlive(w2)
+	runtime.KeepAlive(w4)
+	runtime.KeepAlive(w6)
+	runtime.KeepAlive(w8)
+	runtime.KeepAlive(w10)
+	runtime.KeepAlive(w12)
+	runtime.KeepAlive(w14)
+	runtime.KeepAlive(w16)
+	runtime.KeepAlive(w18)
+	runtime.KeepAlive(w20)
+	runtime.KeepAlive(w22)
+	runtime.KeepAlive(w24)
+	runtime.KeepAlive(w26)
+	runtime.KeepAlive(w28)
+	runtime.KeepAlive(w30)
+	runtime.KeepAlive(w32)
+	return
 }
 
 // weaveStub_m1_a18_15555_r0_0 is the precise trampoline for:
@@ -242,7 +261,17 @@ func weaveStub_m1_a18_15555_r0_0(
 ) {
 	base := unsafe.Pointer(&w0)
 
-	return Dispatch(1, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 = Dispatch(1, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	runtime.KeepAlive(w0)
+	runtime.KeepAlive(w2)
+	runtime.KeepAlive(w4)
+	runtime.KeepAlive(w6)
+	runtime.KeepAlive(w8)
+	runtime.KeepAlive(w10)
+	runtime.KeepAlive(w12)
+	runtime.KeepAlive(w14)
+	runtime.KeepAlive(w16)
+	return
 }
 
 // weaveStub_m2_a0_0_r16_5555 is the precise trampoline for:
@@ -357,11 +386,202 @@ func weaveStub_m2_a0_0_r16_5555(
 	*(*uintptr)(unsafe.Add(base, 96)) = 0
 	*(*uintptr)(unsafe.Add(base, 112)) = 0
 
-	return Dispatch(2, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 = Dispatch(2, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	runtime.KeepAlive(w0)
+	runtime.KeepAlive(w2)
+	runtime.KeepAlive(w4)
+	runtime.KeepAlive(w6)
+	runtime.KeepAlive(w8)
+	runtime.KeepAlive(w10)
+	runtime.KeepAlive(w12)
+	runtime.KeepAlive(w14)
+	return
+}
+
+// weaveStub_m0_a2_3_r0_0 is the precise trampoline for:
+//
+//	weave.Exotic.Iface func(fmt.Stringer, fmt.Stringer, fmt.Stringer, fmt.Stringer, fmt.Stringer, fmt.Stringer, fmt.Stringer, fmt.Stringer) string
+//
+// method 0, 2 argument words (pointers 0x3), 0 result words (pointers 0x0).
+//
+// go:nosplit keeps the morestack trampoline from spilling the register
+// arguments into home slots the interface call site never reserved, and
+// go:norace keeps the race prologue from doing the same.
+//
+//go:nosplit
+//go:norace
+func weaveStub_m0_a2_3_r0_0(
+	a0 uintptr,
+	a1 uintptr,
+	a2 uintptr,
+	a3 uintptr,
+	a4 uintptr,
+	a5 uintptr,
+	a6 uintptr,
+	a7 uintptr,
+	a8 uintptr,
+	a9 uintptr,
+	a10 uintptr,
+	a11 uintptr,
+	a12 uintptr,
+	a13 uintptr,
+	a14 uintptr,
+	a15 uintptr,
+	f0 float64,
+	f1 float64,
+	f2 float64,
+	f3 float64,
+	f4 float64,
+	f5 float64,
+	f6 float64,
+	f7 float64,
+	f8 float64,
+	f9 float64,
+	f10 float64,
+	f11 float64,
+	f12 float64,
+	f13 float64,
+	f14 float64,
+	f15 float64,
+	// 2 words of stack-assigned arguments:
+	w0 unsafe.Pointer,
+	w1 unsafe.Pointer,
+) (
+	r0 unsafe.Pointer,
+	r1 unsafe.Pointer,
+	r2 unsafe.Pointer,
+	r3 unsafe.Pointer,
+	r4 unsafe.Pointer,
+	r5 unsafe.Pointer,
+	r6 unsafe.Pointer,
+	r7 unsafe.Pointer,
+	r8 unsafe.Pointer,
+	r9 unsafe.Pointer,
+	r10 unsafe.Pointer,
+	r11 unsafe.Pointer,
+	r12 unsafe.Pointer,
+	r13 unsafe.Pointer,
+	r14 unsafe.Pointer,
+	r15 unsafe.Pointer,
+	g0 float64,
+	g1 float64,
+	g2 float64,
+	g3 float64,
+	g4 float64,
+	g5 float64,
+	g6 float64,
+	g7 float64,
+	g8 float64,
+	g9 float64,
+	g10 float64,
+	g11 float64,
+	g12 float64,
+	g13 float64,
+	g14 float64,
+	g15 float64,
+) {
+	base := unsafe.Pointer(&w0)
+
+	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 = Dispatch(0, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	runtime.KeepAlive(w0)
+	runtime.KeepAlive(w1)
+	return
+}
+
+// weaveStub_m1_a3_1_r0_0 is the precise trampoline for:
+//
+//	weave.Exotic.VariadicSlice func(int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, ...*weave.Payload) int
+//
+// method 1, 3 argument words (pointers 0x1), 0 result words (pointers 0x0).
+//
+// go:nosplit keeps the morestack trampoline from spilling the register
+// arguments into home slots the interface call site never reserved, and
+// go:norace keeps the race prologue from doing the same.
+//
+//go:nosplit
+//go:norace
+func weaveStub_m1_a3_1_r0_0(
+	a0 uintptr,
+	a1 uintptr,
+	a2 uintptr,
+	a3 uintptr,
+	a4 uintptr,
+	a5 uintptr,
+	a6 uintptr,
+	a7 uintptr,
+	a8 uintptr,
+	a9 uintptr,
+	a10 uintptr,
+	a11 uintptr,
+	a12 uintptr,
+	a13 uintptr,
+	a14 uintptr,
+	a15 uintptr,
+	f0 float64,
+	f1 float64,
+	f2 float64,
+	f3 float64,
+	f4 float64,
+	f5 float64,
+	f6 float64,
+	f7 float64,
+	f8 float64,
+	f9 float64,
+	f10 float64,
+	f11 float64,
+	f12 float64,
+	f13 float64,
+	f14 float64,
+	f15 float64,
+	// 3 words of stack-assigned arguments:
+	w0 unsafe.Pointer,
+	w1 uintptr,
+	w2 uintptr,
+) (
+	r0 unsafe.Pointer,
+	r1 unsafe.Pointer,
+	r2 unsafe.Pointer,
+	r3 unsafe.Pointer,
+	r4 unsafe.Pointer,
+	r5 unsafe.Pointer,
+	r6 unsafe.Pointer,
+	r7 unsafe.Pointer,
+	r8 unsafe.Pointer,
+	r9 unsafe.Pointer,
+	r10 unsafe.Pointer,
+	r11 unsafe.Pointer,
+	r12 unsafe.Pointer,
+	r13 unsafe.Pointer,
+	r14 unsafe.Pointer,
+	r15 unsafe.Pointer,
+	g0 float64,
+	g1 float64,
+	g2 float64,
+	g3 float64,
+	g4 float64,
+	g5 float64,
+	g6 float64,
+	g7 float64,
+	g8 float64,
+	g9 float64,
+	g10 float64,
+	g11 float64,
+	g12 float64,
+	g13 float64,
+	g14 float64,
+	g15 float64,
+) {
+	base := unsafe.Pointer(&w0)
+
+	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 = Dispatch(1, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, base)
+	runtime.KeepAlive(w0)
+	return
 }
 
 func init() {
 	RegisterStub(StubSpec{Index: 0, ArgWords: 18, RetWords: 16, ArgPtrs: 0x15555, RetPtrs: 0x5555, Func: weaveStub_m0_a18_15555_r16_5555})
 	RegisterStub(StubSpec{Index: 1, ArgWords: 18, RetWords: 0, ArgPtrs: 0x15555, RetPtrs: 0x0, Func: weaveStub_m1_a18_15555_r0_0})
 	RegisterStub(StubSpec{Index: 2, ArgWords: 0, RetWords: 16, ArgPtrs: 0x0, RetPtrs: 0x5555, Func: weaveStub_m2_a0_0_r16_5555})
+	RegisterStub(StubSpec{Index: 0, ArgWords: 2, RetWords: 0, ArgPtrs: 0x3, RetPtrs: 0x0, Func: weaveStub_m0_a2_3_r0_0})
+	RegisterStub(StubSpec{Index: 1, ArgWords: 3, RetWords: 0, ArgPtrs: 0x1, RetPtrs: 0x0, Func: weaveStub_m1_a3_1_r0_0})
 }

@@ -7,6 +7,7 @@ package weave
 // these tests need, exactly as StubSource emits them).
 
 import (
+	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -59,6 +60,55 @@ func (stackPtrsImpl) ManyStrs(n int) (s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s1
 
 var _ StackPtrs = stackPtrsImpl{}
 
+// Exotic covers two spill shapes the string-only StackPtrs methods do not: a
+// variadic that packs into a pointer-bearing slice, and interface values, which
+// are two pointer words (itab, data) each.
+type Exotic interface {
+	// VariadicSlice: the variadic tail packs into a []*Payload — three words
+	// whose data word is a pointer — and the fifteen ints before it exhaust the
+	// register file, so the whole slice spills onto the stack.
+	VariadicSlice(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14 int, ps ...*Payload) int
+	// Iface: eight interface values — sixteen pointer words — overflow the
+	// register file on every supported architecture (the receiver consumes one
+	// word, leaving 15 on arm64 and 8 on amd64).
+	Iface(a0, a1, a2, a3, a4, a5, a6, a7 fmt.Stringer) string
+}
+
+type exoticImpl struct{}
+
+func (exoticImpl) VariadicSlice(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14 int, ps ...*Payload) int {
+	n := a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11 + a12 + a13 + a14
+	for _, p := range ps {
+		n += p.A
+	}
+	return n
+}
+
+func (exoticImpl) Iface(a0, a1, a2, a3, a4, a5, a6, a7 fmt.Stringer) string {
+	vs := []fmt.Stringer{a0, a1, a2, a3, a4, a5, a6, a7}
+	var b strings.Builder
+	for _, v := range vs {
+		b.WriteString(v.String())
+		b.WriteByte('|')
+	}
+	return b.String()
+}
+
+// tagStringer is a fmt.Stringer carrying a heap payload; once boxed into an
+// interface, the interface value's data word is its only reference.
+type tagStringer struct{ s string }
+
+func (s tagStringer) String() string { return s.s }
+
+// pStringer is a pointer fmt.Stringer. Boxing it makes the interface data word
+// point straight at the object, so a finalizer reports exactly when the data
+// word stops keeping the object alive.
+type pStringer struct{ s string }
+
+func (p *pStringer) String() string { return p.s }
+
+var _ Exotic = exoticImpl{}
+
 // wantStrs is the 16 argument strings the tests pass, distinct in content and
 // length so a misplaced word shows up as a wrong value rather than a crash.
 func wantStrs() [16]string {
@@ -76,9 +126,11 @@ func hasStub(t reflect.Type, idx int) bool {
 	return !l.stackPointers() || lookupStub(l.shape(idx)) != nil
 }
 
-func requirePreciseStubs(t *testing.T) {
+// requireStubs skips the test unless a precise trampoline is registered for
+// every pointer-spilling method of it, i.e. unless this architecture has the
+// generated stubs checked in.
+func requireStubs(t *testing.T, it reflect.Type) {
 	t.Helper()
-	it := reflect.TypeOf((*StackPtrs)(nil)).Elem()
 	for i := 0; i < it.NumMethod(); i++ {
 		if !hasStub(it, i) {
 			t.Skipf("no precise trampolines generated for %s/%s; see StubSource",
@@ -92,7 +144,7 @@ func requirePreciseStubs(t *testing.T) {
 // and results are only reachable through the caller's stack argument area,
 // described by the generated pointer map.
 func TestPreciseStackPointers(t *testing.T) {
-	requirePreciseStubs(t)
+	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	churn := func(c *Invocation) []reflect.Value {
 		runtime.GC()
@@ -143,7 +195,7 @@ func TestPreciseStackPointers(t *testing.T) {
 // TestPreciseStackPointersInterceptors reads and rewrites stack-assigned
 // pointer arguments, which routes the call through the reflect fallback.
 func TestPreciseStackPointersInterceptors(t *testing.T) {
-	requirePreciseStubs(t)
+	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	var seen string
 	p := New[StackPtrs](stackPtrsImpl{}, func(c *Invocation) []reflect.Value {
@@ -171,7 +223,7 @@ func TestPreciseStackPointersInterceptors(t *testing.T) {
 // goroutines, each with its own stack, so stack growth and moves happen while
 // pointers sit in the caller's argument area.
 func TestPreciseStackPointersConcurrent(t *testing.T) {
-	requirePreciseStubs(t)
+	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	p := New[StackPtrs](stackPtrsImpl{}, func(c *Invocation) []reflect.Value {
 		return c.Proceed()
@@ -210,7 +262,7 @@ func collect16(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, 
 // Those offsets are computed by the generator, and an offset past the area would
 // land in the caller's frame — so the canary sits exactly there.
 func TestPreciseCallerFrameIntact(t *testing.T) {
-	requirePreciseStubs(t)
+	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	p := New[StackPtrs](stackPtrsImpl{})
 	a := wantStrs()
@@ -238,7 +290,7 @@ func TestPreciseCallerFrameIntact(t *testing.T) {
 // map and by nothing else. A collection inside the interceptor then has to keep
 // them alive.
 func TestPreciseTemporariesKeepAlive(t *testing.T) {
-	requirePreciseStubs(t)
+	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	p := New[StackPtrs](stackPtrsImpl{}, func(c *Invocation) []reflect.Value {
 		for i := 0; i < 4; i++ {
@@ -258,6 +310,74 @@ func TestPreciseTemporariesKeepAlive(t *testing.T) {
 		if got := p.ManyPtrs(mk(1), mk(2), mk(3), mk(4), mk(5), mk(6), mk(7), mk(8),
 			mk(9), mk(10), mk(11), mk(12), mk(13), mk(14), mk(15), mk(16)); got != want {
 			t.Fatalf("ManyPtrs over temporaries = %d, want %d", got, want)
+		}
+	}
+}
+
+// TestPreciseExoticShapes runs the variadic-slice and interface-value spill
+// shapes through the precise trampolines. The arguments are temporaries built
+// inside the call, so the only reference to them the collector can be sure of
+// is the one in the caller's stack argument area.
+func TestPreciseExoticShapes(t *testing.T) {
+	requireStubs(t, reflect.TypeOf((*Exotic)(nil)).Elem())
+
+	churn := func(c *Invocation) []reflect.Value {
+		runtime.GC()
+		return c.Proceed()
+	}
+	p := New[Exotic](exoticImpl{}, churn)
+
+	t.Run("variadic", func(t *testing.T) {
+		// Sum of ints 0..14 is 105; the payloads add 1..5.
+		for i := 0; i < 50; i++ {
+			got := p.VariadicSlice(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+				&Payload{A: 1}, &Payload{A: 2}, &Payload{A: 3}, &Payload{A: 4}, &Payload{A: 5})
+			if got != 120 {
+				t.Fatalf("VariadicSlice = %d, want 120", got)
+			}
+		}
+	})
+
+	t.Run("iface", func(t *testing.T) {
+		for i := 0; i < 50; i++ {
+			got := p.Iface(
+				tagStringer{s: "s0"}, tagStringer{s: "s1"}, tagStringer{s: "s2"}, tagStringer{s: "s3"},
+				tagStringer{s: "s4"}, tagStringer{s: "s5"}, tagStringer{s: "s6"}, tagStringer{s: "s7"})
+			if want := "s0|s1|s2|s3|s4|s5|s6|s7|"; got != want {
+				t.Fatalf("Iface = %q, want %q", got, want)
+			}
+		}
+	})
+}
+
+// TestPreciseIfaceKeepAlive is the strongest form of the interface test: the
+// arguments are pointer Stringers created inline, so their only reference is
+// the interface data word — in a register for the first seven, on the stack for
+// the eighth. A collector cycle runs inside the interceptor and then every
+// argument is materialised and read back: a missed data word means the object
+// was collected, and under GODEBUG=clobberfree=1 its payload reads back as
+// garbage.
+func TestPreciseIfaceKeepAlive(t *testing.T) {
+	requireStubs(t, reflect.TypeOf((*Exotic)(nil)).Elem())
+
+	p := New[Exotic](exoticImpl{}, func(c *Invocation) []reflect.Value {
+		runtime.GC()
+		runtime.GC()
+		for i := 0; i < c.NumArg(); i++ {
+			s := c.Arg(i).Interface().(*pStringer).s
+			if !strings.HasPrefix(s, "x") || s[len(s)-1] != byte('A'+i) {
+				t.Errorf("argument %d read back as %q", i, s)
+			}
+		}
+		return c.Proceed()
+	})
+
+	for i := 0; i < 200; i++ {
+		mk := func(k int) fmt.Stringer {
+			return &pStringer{s: strings.Repeat("x", 64) + string(rune('A'+k))}
+		}
+		if got := p.Iface(mk(0), mk(1), mk(2), mk(3), mk(4), mk(5), mk(6), mk(7)); got == "" {
+			t.Fatal("empty result")
 		}
 	}
 }
@@ -283,20 +403,28 @@ func TestShape(t *testing.T) {
 	}
 }
 
-// TestStubSourceMatchesRegistry generates the source for StackPtrs and checks
-// that it declares exactly the shapes the interface needs — the guard against
+// TestStubSourceMatchesRegistry generates the source for the test interfaces
+// and checks that it declares exactly the shapes they need — the guard against
 // the generator and the layout drifting apart.
 func TestStubSourceMatchesRegistry(t *testing.T) {
-	it := reflect.TypeOf((*StackPtrs)(nil)).Elem()
-	src := stubSource("weave", "", "", it)
-	for i := 0; i < it.NumMethod(); i++ {
-		l := newABILayout(it.Method(i).Type)
-		sh := l.shape(i)
-		if !strings.Contains(src, "func "+sh.name()+"(") {
-			t.Errorf("generated source has no trampoline for %s (%s)", it.Method(i).Name, sh)
-		}
-		if !strings.Contains(src, "Func: "+sh.name()) {
-			t.Errorf("generated source does not register %s", sh.name())
+	all := []reflect.Type{
+		reflect.TypeOf((*StackPtrs)(nil)).Elem(),
+		reflect.TypeOf((*Exotic)(nil)).Elem(),
+	}
+	src := stubSource("weave", "", "", all...)
+	for _, it := range all {
+		for i := 0; i < it.NumMethod(); i++ {
+			l := newABILayout(it.Method(i).Type)
+			if !l.stackPointers() {
+				continue
+			}
+			sh := l.shape(i)
+			if !strings.Contains(src, "func "+sh.name()+"(") {
+				t.Errorf("generated source has no trampoline for %s.%s (%s)", it, it.Method(i).Name, sh)
+			}
+			if !strings.Contains(src, "Func: "+sh.name()) {
+				t.Errorf("generated source does not register %s", sh.name())
+			}
 		}
 	}
 	if !strings.Contains(src, "//go:build "+runtime.GOARCH) {
@@ -304,7 +432,7 @@ func TestStubSourceMatchesRegistry(t *testing.T) {
 	}
 	// The generated file must be self-contained Go: an unqualified in-package
 	// generation calls Dispatch and RegisterStub directly.
-	for _, want := range []string{"//go:nosplit", "//go:norace", "return Dispatch(", "RegisterStub(StubSpec{"} {
+	for _, want := range []string{"//go:nosplit", "//go:norace", "= Dispatch(", "runtime.KeepAlive", "RegisterStub(StubSpec{"} {
 		if !strings.Contains(src, want) {
 			t.Errorf("generated source is missing %q", want)
 		}

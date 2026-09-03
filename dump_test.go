@@ -21,7 +21,9 @@ func TestGeneratedStubsUpToDate(t *testing.T) {
 	if runtime.GOARCH != "arm64" {
 		t.Skipf("%s stubs are not checked in; generate them with StubSource", runtime.GOARCH)
 	}
-	want := stubSource("weave", "", "", reflect.TypeOf((*StackPtrs)(nil)).Elem())
+	want := stubSource("weave", "", "",
+		reflect.TypeOf((*StackPtrs)(nil)).Elem(),
+		reflect.TypeOf((*Exotic)(nil)).Elem())
 
 	if os.Getenv("WEAVE_REGEN") != "" {
 		if err := os.WriteFile(preciseStubsFile, []byte(want), 0o644); err != nil {

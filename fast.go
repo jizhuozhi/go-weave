@@ -86,6 +86,8 @@ func (c *Invocation) materializeArgs() []reflect.Value {
 		switch {
 		case t.Size() == 0:
 			out[i] = reflect.Zero(t)
+		case t.Kind() == reflect.Interface:
+			out[i] = materializeIface(t, steps, regs, c.stack)
 		case len(steps) == 1:
 			out[i] = reflect.NewAt(t, stepAddr(steps[0], regs, c.stack)).Elem()
 		default:
@@ -159,9 +161,45 @@ func writeScalar(dst unsafe.Pointer, v reflect.Value, size uintptr) {
 	writeWord(dst, x, size)
 }
 
+// materializeIface reads an interface argument out of the ABI and returns an
+// interface-typed reflect.Value for it. An interface travels as two words whose
+// first is an *itab — the register ABI's representation — whereas reflect's own
+// representation of a value starts with an *abiType, so the two cannot be read
+// back with NewAt the way every other type is.
+func materializeIface(t reflect.Type, steps []step, regs *regBuf, stack unsafe.Pointer) reflect.Value {
+	tab := *(*unsafe.Pointer)(stepAddr(steps[0], regs, stack))
+	if tab == nil {
+		return reflect.Zero(t)
+	}
+	var data unsafe.Pointer
+	if len(steps) == 1 {
+		// A stack-assigned interface is a single step covering the whole
+		// 16-byte value: (itab, data) laid out contiguously.
+		data = *(*unsafe.Pointer)(add(stepAddr(steps[0], regs, stack), ptrSize))
+	} else {
+		// Two register steps: itab then data.
+		data = *(*unsafe.Pointer)(stepAddr(steps[1], regs, stack))
+	}
+	// Reassemble the concrete value as an any and let reflect.ValueOf decode
+	// it — the one path that treats the (type, data) pair correctly for every
+	// kind, pointer included — then box it back into the interface type so the
+	// result matches the argument's declared type.
+	it := (*itab)(tab)
+	var e eface
+	e.typ = it.Type
+	e.data = data
+	slot := reflect.New(t).Elem()
+	slot.Set(reflect.ValueOf(*(*any)(unsafe.Pointer(&e))))
+	return slot
+}
+
 // scatterValue copies one result out of v into the registers or stack slots
 // the ABI assigned to it.
 func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, stack unsafe.Pointer) {
+	if t.Kind() == reflect.Interface {
+		scatterIface(v, t, steps, regs, stack)
+		return
+	}
 	if len(steps) == 1 {
 		st := steps[0]
 		dst := stepAddr(st, regs, stack)
@@ -211,6 +249,24 @@ func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, s
 	for _, st := range steps {
 		memcpy(stepAddr(st, regs, stack), add(base, st.offset), st.size)
 	}
+}
+
+// scatterIface writes an interface result back into the ABI. It is the reverse
+// of materializeIface: the caller reads an (itab, data) pair, while reflect
+// hands the value over as (type, data), so the value is boxed once through the
+// interface type to recover the itab before being stored.
+func scatterIface(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, stack unsafe.Pointer) {
+	slot := reflect.New(t).Elem()
+	slot.Set(v)
+	i := (*iface)(unsafe.Pointer(slot.UnsafeAddr()))
+	if len(steps) == 1 {
+		mem := stepAddr(steps[0], regs, stack)
+		*(*unsafe.Pointer)(mem) = unsafe.Pointer(i.tab)
+		*(*unsafe.Pointer)(add(mem, ptrSize)) = i.data
+		return
+	}
+	*(*uintptr)(stepAddr(steps[0], regs, stack)) = uintptr(unsafe.Pointer(i.tab))
+	*(*unsafe.Pointer)(stepAddr(steps[1], regs, stack)) = i.data
 }
 
 // valueMem returns the address of v's storage, copying it into a temporary

@@ -257,7 +257,7 @@ func stubSource(pkgName, importPath, qual string, ifaces ...reflect.Type) string
 		return b.String()
 	}
 
-	b.WriteString("import (\n\t\"unsafe\"\n")
+	b.WriteString("import (\n\t\"runtime\"\n\t\"unsafe\"\n")
 	if qual != "" {
 		fmt.Fprintf(&b, "\n\t%s %q\n", qual, importPath)
 	}
@@ -339,14 +339,38 @@ func writeStub(b *strings.Builder, sh stubShape, users []string, sel func(string
 		}
 	}
 
-	fmt.Fprintf(b, "\n\treturn %s(%d", sel("Dispatch"), sh.index)
+	// Assign the dispatcher's return values to the named results, then keep the
+	// pointer words alive across the call. The whole point of the precise
+	// trampoline is its argument pointer map — but a map marks a parameter as a
+	// live pointer only where the parameter is actually live, and the body
+	// otherwise uses nothing but &w0, the area's address. KeepAlive forces the
+	// pointer words live across the Dispatch call, which is what makes the
+	// collector scan them in the caller's frame.
+	fmt.Fprintf(b, "\n\t")
+	for i := 0; i < intArgRegs; i++ {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(b, "r%d", i)
+	}
+	for i := 0; i < floatArgRegs; i++ {
+		b.WriteString(", ")
+		fmt.Fprintf(b, "g%d", i)
+	}
+	fmt.Fprintf(b, " = %s(%d", sel("Dispatch"), sh.index)
 	for i := 0; i < intArgRegs; i++ {
 		fmt.Fprintf(b, ", a%d", i)
 	}
 	for i := 0; i < floatArgRegs; i++ {
 		fmt.Fprintf(b, ", f%d", i)
 	}
-	b.WriteString(", base)\n}\n\n")
+	b.WriteString(", base)\n")
+	for i := 0; i < sh.words(); i++ {
+		if ptrs&(1<<uint(i)) != 0 {
+			fmt.Fprintf(b, "\truntime.KeepAlive(w%d)\n", i)
+		}
+	}
+	b.WriteString("\treturn\n}\n\n")
 }
 
 func typeName(ptrs uint64, i int) string {

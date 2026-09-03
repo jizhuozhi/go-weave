@@ -94,14 +94,24 @@
 // all. Generated init functions hand the code pointers to RegisterStub, and
 // newTrampoline prefers a registered precise trampoline over the generic one.
 //
-// Two details make it work. The whole area, results included, is declared as
-// parameters rather than results: a declared result belongs to the compiler,
-// which zeroes it on entry and may write it back on return, overwriting what
-// the dispatcher stored through the area pointer. And because the result words
-// then still hold whatever the caller's frame held before the call while the
-// new pointer map already claims them, the trampoline clears the
-// pointer-holding ones before its first call — a nosplit function has no safe
-// point until then, so the collector never sees a stale word.
+// Three details make it work.
+//
+// The whole area, results included, is declared as parameters rather than
+// results: a declared result belongs to the compiler, which zeroes it on entry
+// and may write it back on return, overwriting what the dispatcher stored
+// through the area pointer.
+//
+// Because the result words still hold whatever the caller's frame held before
+// the call while the new pointer map already claims them, the trampoline clears
+// the pointer-holding ones before its first call — a nosplit function has no
+// safe point until then, so the collector never sees a stale word.
+//
+// And the pointer words are kept alive across the dispatcher call with
+// runtime.KeepAlive. A parameter appears in the argument pointer map only where
+// it is live, and the body otherwise uses nothing but the area's address — so
+// without KeepAlive the compiler marks the pointer words dead at the call, the
+// collector does not scan them, and an argument whose only reference is its
+// interface data word gets collected mid-call.
 //
 // Methods whose pointers stay inside the register file — nearly all of them —
 // need no generated code and keep using the generic trampoline.
@@ -118,8 +128,13 @@
 // data that is still live in the register spill area or in the caller's frame.
 //
 // Results are scattered back into the same register positions. One subtlety
-// worth remembering: an interface result must be written as (itab, data), not
-// as the (type, data) pair that reflect.Value.Interface returns.
+// worth remembering: an interface travels through the ABI as (itab, data),
+// while reflect's own representation of a value begins with (type, data) — so
+// materializeIface and scatterIface reassemble interfaces in both directions
+// rather than copying them like plain memory. The first word of an interface
+// is not scanned as a pointer by the collector (itab entries are runtime-cached
+// and survive on their own), which is why the register pointer mask marks only
+// the data word.
 //
 // # Calling the target
 //

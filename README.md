@@ -222,7 +222,7 @@ func main() {
 
 The generated `init` registers each trampoline, `RegisterStub` verifies that
 its signature really matches the shape it claims (a mismatch would hand the
-collector a wrong map), and proxy construction picks it up. Two details are
+collector a wrong map), and proxy construction picks it up. Three details are
 load-bearing:
 
 - the whole area, **results included, is declared as parameters** — a declared
@@ -232,7 +232,11 @@ load-bearing:
 - the result words still hold the caller's old frame contents while the new map
   already claims they are pointers, so the trampoline **clears them before its
   first call** — a `nosplit` function has no safe point until then, so the
-  collector never sees a stale word.
+  collector never sees a stale word;
+- the pointer words are **kept alive across the dispatcher call** with
+  `runtime.KeepAlive` — the body otherwise uses nothing but the area's address,
+  so without it the argument liveness would mark those words dead at the call
+  and the collector would not scan them.
 
 Interfaces whose pointers stay in registers need none of this and generate
 nothing.
