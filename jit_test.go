@@ -321,6 +321,11 @@ func TestJITFindfunc(t *testing.T) {
 // makeJITPage emits the trampoline for idx into a fresh executable region and
 // registers a moduledata describing argWords words of stack argument area with
 // pointer bitmap argPtrs.
+//
+// Once registered the module's text and pclntable must stay valid for the
+// life of the process: findfunc walks the lastmoduledatap list on every stack
+// scan, so freeing the page would leave a dangling entry that later GC passes
+// dereference. The memory is therefore rooted forever and cleanup is a no-op.
 func makeJITPage(idx, argWords int, argPtrs uint64) (uintptr, func()) {
 	code := jitStubCode(idx, uintptr(reflect.ValueOf(Dispatch).Pointer()))
 	mem, makeExec, err := jitExecAlloc(4096)
@@ -333,7 +338,8 @@ func makeJITPage(idx, argWords int, argPtrs uint64) (uintptr, func()) {
 
 	md := buildJITModule(mem[:len(code)], argWords, argPtrs)
 	registerModule(md)
-	return base, func() { syscall.Munmap(mem) }
+	jitRoots = append(jitRoots, mem, md)
+	return base, func() {}
 }
 
 // TestJITSelftest checks the C-level mmap+protect+execute round trip works at
