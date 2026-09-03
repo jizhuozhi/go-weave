@@ -41,11 +41,17 @@ func newTrampoline(m *Method) unsafe.Pointer {
 	if code := lookupStub(sh); code != nil {
 		return code
 	}
+	// No compile-time trampoline: generate one at runtime. This makes methods
+	// that move pointers through the stack argument area work without
+	// StubSource / go generate.
+	if code := jitTrampoline(sh); code != nil {
+		return code
+	}
 	panic("weave: " + m.Name + " " + m.Type.String() +
 		" moves pointers through the caller's stack argument area (" + sh.String() + ")," +
-		" which the generic trampoline describes to the collector as pointer-free." +
-		"\nGenerate a precise trampoline for this interface — write weave.StubSource(pkg, ifaceType) into a" +
-		" file of your program and rebuild — or keep pointer arguments and results inside the register file:" +
-		" register assignment is positional, so moving pointer arguments to the front of the signature is" +
-		" often enough (the receiver takes one word, " + fmt.Sprint(intArgRegs-1) + " integer words remain).")
+		" and no trampoline for it could be generated (the runtime JIT needs Go 1.23+)." +
+		"\nGenerate a precise trampoline with weave.StubSource(pkg, ifaceType) and rebuild — or keep pointer" +
+		" arguments and results inside the register file: register assignment is positional, so moving pointer" +
+		" arguments to the front of the signature is often enough (the receiver takes one word, " +
+		fmt.Sprint(intArgRegs-1) + " integer words remain).")
 }

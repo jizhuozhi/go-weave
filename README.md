@@ -176,6 +176,21 @@ marks as pointer-holding into a parallel `ptrs [N]unsafe.Pointer` array the
 collector *does* scan — before the first allocation. Verified with
 `GODEBUG=clobberfree=1`.
 
+### Runtime JIT
+
+On Go 1.23+ a precise trampoline is generated **at runtime** instead of emitted
+by the compiler: the proxy mmaps an executable page, writes the trampoline's
+machine code (the same register shuffle the generic stubs perform), and builds a
+moduledata whose argument pointer map describes the method's stack area word by
+word. The module is appended to the runtime's moduledata list, so `findfunc`
+recognises the injected code and the collector scans any pointer in the stack
+area exactly as it would for a compiled function. This removes the `go generate`
+step entirely — proxy construction just works, for any interface shape, with
+nothing to pre-declare.
+
+The forged `moduledata` layout is version-specific, so the JIT path is gated to
+Go 1.23+; earlier releases fall back to [Precise trampolines](#precise-trampolines).
+
 ### Precise trampolines
 
 The same dilemma reappears, harder, for arguments and results that spill onto
@@ -245,15 +260,16 @@ nothing.
 
 - **Stack-passed arguments and results are supported** up to 480 bytes per
   method (arguments or results spilling past the register file, big structs by
-  value). When the spilled part carries *pointers*, the method needs a precise
-  trampoline: the stack area's GC description belongs to the trampoline, and the
-  generic one describes it as a byte window — a lie the collector cannot be
-  talked out of in time. `weave.StubSource` generates the precise trampolines
-  for a given set of interfaces (see [Precise trampolines](#precise-trampolines));
-  without one such a method is rejected at proxy construction, with the shape
-  spelled out. Since register assignment is positional, moving pointer arguments
-  to the front of the signature usually avoids the generation step entirely
-  (15 integer words remain on arm64 after the receiver, 8 on amd64).
+  value). When the spilled part carries *pointers*, the stack area's GC
+  description belongs to the trampoline, and the generic one describes it as a
+  byte window — a lie the collector cannot be talked out of in time. On Go 1.23+
+  the trampoline is **generated at runtime** (see
+  [Runtime JIT](#runtime-jit)): no codegen step, no shape to spell out. On older
+  Go releases `weave.StubSource` generates the precise trampolines (see
+  [Precise trampolines](#precise-trampolines)). Since register assignment is
+  positional, moving pointer arguments to the front of the signature still
+  avoids the stack area entirely (15 integer words remain on arm64 after the
+  receiver, 8 on amd64).
 - **Interfaces can have at most 128 methods** — slot k serves method k of every
   interface, so the bound is per-interface, not process-wide. Raise `slots` in
   `gen/main.go` and run `go generate ./...` for more.
