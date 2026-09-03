@@ -1,3 +1,5 @@
+//go:build amd64 || arm64
+
 package weave
 
 // JIT probe: verify that a runtime-generated trampoline, injected into the
@@ -11,11 +13,14 @@ package weave
 // append it to lastmoduledatap.
 
 import (
+	"reflect"
 	"runtime"
 	"syscall"
 	"testing"
 	"unsafe"
 	_ "unsafe" // for //go:linkname
+
+	"github.com/jizhuozhi/go-weave/internal/rt"
 )
 
 //go:linkname lastmoduledatap runtime.lastmoduledatap
@@ -169,7 +174,7 @@ const (
 	fdLocalsPointerMaps = 1
 )
 
-const pcQuantum = 4 // arm64 instruction quantum
+// pcQuantum is defined per-architecture in jitcode_*.go.
 
 // buildJITModule constructs a moduledata describing one generated trampoline.
 // code is the trampoline's machine code (text = &code[0]), argWords the size of
@@ -313,43 +318,52 @@ func TestJITFindfunc(t *testing.T) {
 	t.Logf("findfunc resolved injected trampoline: %s", f.Name())
 }
 
-// arm64StubCode emits the trampoline machine code for method index idx — the
-// same register shuffle the generated stubs perform. It returns the code and
-// the byte offset of the BL Dispatch instruction, which the caller patches once
-// the page address is known.
-func arm64StubCode(idx int) (code []byte, blOff int) {
-	off := 0
-	put := func(ins uint32) {
-		code[off] = byte(ins)
-		code[off+1] = byte(ins >> 8)
-		code[off+2] = byte(ins >> 16)
-		code[off+3] = byte(ins >> 24)
-		off += 4
+// makeJITPage emits the trampoline for idx into a fresh executable region and
+// registers a moduledata describing argWords words of stack argument area with
+// pointer bitmap argPtrs.
+func makeJITPage(idx, argWords int, argPtrs uint64) (uintptr, func()) {
+	code := jitStubCode(idx, uintptr(reflect.ValueOf(Dispatch).Pointer()))
+	mem, makeExec, err := jitExecAlloc(4096)
+	if err != nil {
+		panic(err)
 	}
-	code = make([]byte, 112)
-	put(0xd10483f4) // SUB $288, RSP, R20
-	put(0xa93ffa9d) // STP (R29, R30), -8(R20)
-	put(0x9100029f) // MOVD R20, RSP
-	put(0xd10023fd) // SUB $8, RSP, R29
-	put(0xf90007ef) // MOVD R15, 8(RSP)
-	put(0x9104a3f0) // ADD $296, RSP, R16  (&s0)
-	put(0xf9000bf0) // MOVD R16, 16(RSP)
-	for r := 14; r >= 0; r-- {
-		put(0xaa0003e0 | uint32(r)<<16 | uint32(r+1)) // MOVD R{r}, R{r+1}
-	}
-	put(0xd2800000 | uint32(idx)<<5) // MOVZ $idx, R0
-	blOff = off
-	put(0x94000000) // BL Dispatch (patched below)
-	put(0xa97ffbfd) // LDP -8(RSP), (R29, R30)
-	put(0x910483ff) // ADD $288, RSP, RSP
-	put(0xd65f03c0) // RET
-	return code[:off], blOff
+	base := uintptr(unsafe.Pointer(&mem[0]))
+	copy(mem[:len(code)], code)
+	makeExec()
+
+	md := buildJITModule(mem[:len(code)], argWords, argPtrs)
+	registerModule(md)
+	return base, func() { syscall.Munmap(mem) }
 }
 
-// NOTE: the next step — mmap an executable page and run arm64StubCode for real
-// — needs MAP_JIT plus pthread_jit_write_protect_np on Apple Silicon. That call
-// is a libSystem symbol with no runtime trampoline, so it requires a cgo shim
-// in a separate package (cgo cannot live alongside the .s files here). sonic
-// ships exactly that in its loader package; this spike stops at the point that
-// establishes feasibility — a dynamic moduledata with a correct args map that
-// findfunc resolves — and leaves execution + GC-scan for that next step.
+// TestJITSelftest checks the C-level mmap+protect+execute round trip works at
+// all, isolating platform mechanics from the trampoline machine code.
+func TestJITSelftest(t *testing.T) {
+	if runtime.GOARCH != "arm64" || runtime.GOOS != "darwin" {
+		t.Skip("darwin/arm64 only")
+	}
+	if !rt.Selftest() {
+		t.Fatal("C-level JIT selftest faulted")
+	}
+}
+
+// TestJITExec proves the JIT trampoline actually runs end to end: it dispatches
+// method 5 (Noop) of a Service proxy through the generated machine code.
+func TestJITExec(t *testing.T) {
+	if runtime.GOARCH != "arm64" && runtime.GOARCH != "amd64" {
+		t.Skip("arm64/amd64 only")
+	}
+	p := New[Service](svc{})
+	entry, cleanup := makeJITPage(5, 0, 0) // Noop is method index 5
+	defer cleanup()
+
+	// Point itab.Fun[5] at the JIT trampoline, then call Noop through the
+	// interface — the real dispatch path, whose stack-argument-area layout the
+	// trampoline's &s0 offset assumes.
+	proxy := (*Proxy)((*iface)(unsafe.Pointer(&p)).data)
+	funs := unsafe.Slice(&proxy.itab.Fun[0], len(proxy.methods))
+	funs[5] = uintptr(entry)
+	p.Noop()
+	// Reaching here without a fault means the JIT trampoline ran Dispatch.
+	t.Log("JIT trampoline dispatched Noop")
+}
