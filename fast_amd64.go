@@ -2,39 +2,23 @@
 
 package weave
 
-import (
-	"reflect"
-	"unsafe"
-)
+import "unsafe"
 
 // fastTrampoline reports whether this build ships the fast trampoline.
 const fastTrampoline = true
 
 // The trampoline has a maximal register signature: nine integer registers
 // (AX BX CX DI SI R8 R9 R10 R11) and fifteen floating point registers
-// (X0-X14). Each slot in stubs_gen_amd64.go is its own Go function, so the
-// compiler emits a distinct code pointer per slot — a bare pointer with no
-// closure context, which is exactly what itab.Fun[k] expects.
-type fastFunc = func(a0, a1, a2, a3, a4, a5, a6, a7, a8 uintptr,
-	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14 float64,
-	s0 [stackWindow]byte) (
-	r0, r1, r2, r3, r4, r5, r6, r7, r8 unsafe.Pointer,
-	g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14 float64)
-
-// methodSlots maps a trampoline slot to its method. Slots are assigned once per
-// distinct method and never released.
-// methodSlots used to map a slot to a *Method assigned by a global counter,
-// which capped the number of distinct methods process-wide. The slot index is
-// now simply the method's index in the interface, and dispatch resolves the
-// *Method through the receiver's proxy, so every interface shares the same
-// slots and only the methods-per-interface count is bounded.
+// (X0-X14). Each slot is a runtime-generated trampoline, prefetched at startup
+// (see jit.go), so every slot gets a distinct bare code pointer with no closure
+// context — exactly what itab.Fun[k] expects.
 
 // fastStub returns the code pointer for method index i of any interface.
 func fastStub(i int) unsafe.Pointer {
 	if uint(i) >= uint(slotCount) {
-		panic("weave: interface has more methods than trampoline slots; raise gen/main.go's slots constant and run go generate")
+		panic("weave: interface has more methods than trampoline slots")
 	}
-	return unsafe.Pointer(reflect.ValueOf(stubs[i]).Pointer())
+	return jitStubs[i]
 }
 
 // redial, implemented in redial_amd64.s, reloads the argument registers from

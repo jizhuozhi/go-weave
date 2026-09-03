@@ -2,12 +2,11 @@ package weave
 
 // Precise trampolines, generated at runtime.
 //
-// The generic trampoline (stubs_gen_*.go) declares the caller's stack argument
-// area as one opaque [stackWindow]byte parameter. That is what lets a single
-// generated function serve every method of every interface — but the GC
-// description of the caller's outgoing area belongs to the callee, so the byte
-// window tells the collector "no pointers here" for an area that may well hold
-// some.
+// The generic trampoline (jit.go, prefetched at startup) treats the caller's
+// stack argument area as one opaque, pointer-free window. That is what lets a
+// single trampoline serve every method of every interface — but the GC
+// description of the caller's outgoing area belongs to the callee, so the
+// pointer-free window is a lie for an area that may well hold pointers.
 //
 // A method that moves pointers through the stack argument area needs a
 // trampoline whose argument pointer map describes that area word by word — a

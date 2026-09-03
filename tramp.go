@@ -6,9 +6,9 @@ package weave
 // is `MOVD 24(itab), R6; CALL (R6)` and passes no closure context. A trampoline
 // therefore cannot be a closure and cannot be a reflect.MakeFunc value (whose
 // entry expects its context in the closure register). Instead, method k of an
-// interface gets generated function k (see gen and stubs_gen_*.go), whose code
-// pointer carries no context but whose hardcoded index is the method's index in
-// the interface. The dispatcher resolves the *Method — and with it the proxy's
+// interface gets runtime-generated trampoline k (see jit.go), whose code pointer
+// carries no context but whose hardcoded index is the method's index in the
+// interface. The dispatcher resolves the *Method — and with it the proxy's
 // delegation target — through the receiver, so the same slots serve every
 // interface; only the methods-per-interface count is bounded.
 //
@@ -29,7 +29,7 @@ func newTrampoline(m *Method) unsafe.Pointer {
 	l := m.layout
 	if l.stackBytes > stackWindow {
 		panic(fmt.Sprintf("weave: method %s needs %d bytes of stack argument area, more than the trampoline window of %d;"+
-			" raise stackWindow in gen and the redial frame, and run go generate",
+			" raise stackWindow and the redial frame",
 			m.Name+" "+m.Type.String(), l.stackBytes, stackWindow))
 	}
 	if !l.stackPointers() {
@@ -45,7 +45,7 @@ func newTrampoline(m *Method) unsafe.Pointer {
 	}
 	panic("weave: " + m.Name + " " + m.Type.String() +
 		" moves pointers through the caller's stack argument area (" + sh.String() + ")," +
-		" and no trampoline could be generated (the runtime JIT needs Go 1.23+)." +
+		" and no trampoline could be generated." +
 		"\nKeep pointer arguments and results inside the register file: register assignment is positional," +
 		" so moving pointer arguments to the front of the signature is often enough (the receiver takes one" +
 		" word, " + fmt.Sprint(intArgRegs-1) + " integer words remain).")

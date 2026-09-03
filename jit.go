@@ -1,13 +1,14 @@
-//go:build (amd64 || arm64) && go1.23
+//go:build amd64 || arm64
 
 package weave
 
-// Runtime JIT: generate a trampoline's machine code and a moduledata whose
-// argument pointer map describes the method's stack argument area, so methods
-// that move pointers through the stack work without a compile-time codegen
-// step. The trampoline itself is the same register shuffle the generated stubs
-// perform; only the moduledata is shaped per method, and the argument pointer
-// map is built directly rather than derived from a compiled function signature.
+// Runtime JIT: generate every trampoline's machine code and a moduledata whose
+// argument pointer map describes the method's stack argument area. There is no
+// compile-time codegen at all — the generic trampolines are prefetched at
+// startup, and pointer-spilling trampolines are compiled at proxy construction
+// (one per shape, cached). The trampoline itself is a plain register shuffle;
+// only the moduledata is shaped per method, and the argument pointer map is
+// built directly rather than derived from a compiled function signature.
 //
 // A generated module is appended to runtime.lastmoduledatap (via linkname) so
 // findfunc recognises it and the collector scans its frame. Once registered it
@@ -25,6 +26,11 @@ import (
 //go:linkname lastmoduledatap runtime.lastmoduledatap
 var lastmoduledatap *jitModuledata
 
+// slotCount is the number of generic trampoline slots, one per interface method
+// index: slot k serves method k of every interface simultaneously, so the bound
+// is methods-per-interface, not process-wide.
+const slotCount = 128
+
 // jitMu serialises registration against concurrent proxy construction.
 var jitMu sync.Mutex
 
@@ -35,6 +41,22 @@ var jitBySh = map[stubShape]unsafe.Pointer{}
 // jitRoots keeps heap allocations referenced only through uintptr fields of the
 // (never-scanned-by-construction) moduledata reachable from a GC root.
 var jitRoots []any
+
+// jitStubs holds the prefetched generic trampolines, generated at startup so the
+// hot path never pays a JIT cost. Slot k dispatches method index k; its stack
+// area holds no pointers, so the argument map is one pointer-free window.
+var jitStubs [slotCount]unsafe.Pointer
+
+func init() {
+	// Prefetch the generic trampolines up front — a predictable one-off startup
+	// cost, like a pretouch, instead of a per-slot compile on the first call.
+	for i := 0; i < slotCount; i++ {
+		sh := stubShape{index: i, argWords: stackWindow / int(ptrSize)}
+		if jitStubs[i] = jitTrampoline(sh); jitStubs[i] == nil {
+			panic("weave: runtime JIT failed to generate a generic trampoline")
+		}
+	}
+}
 
 // --- runtime layout mirrors ------------------------------------------------
 //

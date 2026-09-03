@@ -2,37 +2,23 @@
 
 package weave
 
-import (
-	"reflect"
-	"unsafe"
-)
+import "unsafe"
 
 // fastTrampoline reports whether this build ships the fast trampoline.
 const fastTrampoline = true
 
 // The trampoline has a maximal register signature: sixteen integer registers
-// (R0-R15) and sixteen floating point registers (F0-F15). Each slot in
-// stubs_gen_arm64.go is its own Go function, so the compiler emits a distinct
-// code pointer per slot — a bare pointer with no closure context, which is
-// exactly what itab.Fun[k] expects.
-type fastFunc = func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15 uintptr,
-	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15 float64,
-	s0 [stackWindow]byte) (
-	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 unsafe.Pointer,
-	g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15 float64)
-
-// methodSlots used to map a slot to a *Method assigned by a global counter,
-// which capped the number of distinct methods process-wide. The slot index is
-// now simply the method's index in the interface, and dispatch resolves the
-// *Method through the receiver's proxy, so every interface shares the same
-// slots and only the methods-per-interface count is bounded.
+// (R0-R15) and sixteen floating point registers (F0-F15). Each slot is a
+// runtime-generated trampoline, prefetched at startup (see jit.go), so every
+// slot gets a distinct bare code pointer with no closure context — exactly what
+// itab.Fun[k] expects.
 
 // fastStub returns the code pointer for method index i of any interface.
 func fastStub(i int) unsafe.Pointer {
 	if uint(i) >= uint(slotCount) {
-		panic("weave: interface has more methods than trampoline slots; raise gen/main.go's slots constant and run go generate")
+		panic("weave: interface has more methods than trampoline slots")
 	}
-	return unsafe.Pointer(reflect.ValueOf(stubs[i]).Pointer())
+	return jitStubs[i]
 }
 
 // redial, implemented in redial_arm64.s, reloads the argument registers from

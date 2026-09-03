@@ -32,15 +32,14 @@ jobs:
       - name: GC stress
         run: GODEBUG=clobberfree=1 go test -count=3 ./...
 
-  # Every Go version since the register ABI reached both architectures
-  # (1.17 amd64, 1.18 arm64). The runtime layouts this package forges are
-  # validated at init against a real itab, so a future layout change fails
-  # loudly; this matrix guards the versions in between.
+  # The runtime.moduledata layout the JIT forges changed in Go 1.23, so that is
+  # the floor; this matrix guards the floor and the latest release across both
+  # linux architectures.
   versions:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.18", "1.19", "1.20", "1.21", "1.22", "1.23", "1.24"]
+        go: ["1.23", "1.24"]
         os: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     steps:
@@ -54,15 +53,3 @@ jobs:
         run: go test -race ./...
       - name: GC stress
         run: GODEBUG=clobberfree=1 go test -count=1 ./...
-
-  generated:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-      - name: go generate is idempotent
-        run: |
-          go generate ./...
-          git diff --exit-code -- stubs_gen_arm64.go stubs_gen_amd64.go

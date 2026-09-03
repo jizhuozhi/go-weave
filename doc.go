@@ -32,30 +32,27 @@
 // out closures (their entry expects a context in the closure register) and
 // rules out reflect.MakeFunc (whose entry, makeFuncStub, expects the same).
 //
-// Instead each interface method index gets one dedicated, ordinary Go
-// function, generated at build time by gen and checked into
-// stubs_gen_arm64.go / stubs_gen_amd64.go. Every slot has the architecture's
-// maximal register signature and forwards to the dispatcher with its own
-// hardcoded slot index — which is also the method's index in the interface,
-// so the receiver alone resolves which method runs, and every interface
-// shares the same slots.
+// Instead each interface method index gets one dedicated trampoline, generated
+// at runtime (see "Runtime JIT" below): the 128 generic slots are prefetched at
+// startup, and pointer-spilling shapes are compiled at proxy construction.
+// Every slot has the architecture's maximal register signature and forwards to
+// the dispatcher with its own hardcoded slot index — which is also the method's
+// index in the interface, so the receiver alone resolves which method runs, and
+// every interface shares the same slots.
 //
-// The stubs carry two load-bearing directives, both defending against the
-// same hazard: a register parameter's ABI home slot lives in the caller's
-// outgoing argument area, which a direct call to the stub's signature would
-// reserve for all 32 parameters — but an itab call site is compiled against
-// the method's signature and reserves only the method's own homes.
+// The trampoline is pure machine code, so two hazards the generated Go stubs
+// used to need directives for now hold for free. A register parameter's ABI
+// home slot lives in the caller's outgoing argument area, which an itab call
+// site reserves only for the method's own homes:
 //
-//   - //go:norace: the race prologue would spill all parameters across the
-//     racefuncenter call, straight into the unreserved homes.
-//   - //go:nosplit: a split function's morestack trampoline saves every
-//     argument register to its home before growing the stack, writing ~250
-//     bytes past the itab caller's reservation. nosplit removes the stack
-//     check; the ~300 byte frame is well under the StackNosplit limit.
+//   - there is no race prologue to spill all parameters across the racefuncenter
+//     call into the unreserved homes;
+//   - there is no stack check, so no morestack trampoline saves every argument
+//     register past the itab caller's reservation.
 //
-// The stub is a pure register conduit with no memory accesses, so excluding
-// it from race instrumentation costs nothing: from dispatch down, everything
-// stays fully instrumented.
+// The trampoline is a pure register conduit with no memory accesses beyond the
+// result-word clearing, so excluding it from race instrumentation costs
+// nothing: from dispatch down, everything stays fully instrumented.
 //
 // # GC safety of the register spill
 //
@@ -107,8 +104,8 @@
 // Methods whose pointers stay inside the register file — nearly all of them —
 // need no generated code and keep using the generic trampoline.
 //
-// The forged moduledata layout is version-specific, so the JIT path is gated to
-// Go 1.23+; earlier releases reject pointer-spilling methods.
+// The forged moduledata layout is version-specific; it changed in Go 1.23, so
+// that is the supported floor.
 //
 // # Decoding and encoding arguments
 //
@@ -149,14 +146,12 @@
 //     caller's stack argument area are supported up to 480 bytes per method
 //     (stackWindow). When the spilled part contains pointers the method needs
 //     a trampoline that describes that area to the collector, generated at
-//     runtime on Go 1.23+ (see "Runtime JIT" above); earlier releases reject
-//     such a method. Since register assignment is positional, moving pointer
-//     arguments to the front of a signature is often enough to avoid the stack
-//     area altogether.
+//     runtime (see "Runtime JIT" above). Since register assignment is
+//     positional, moving pointer arguments to the front of a signature is
+//     often enough to avoid the stack area altogether.
 //   - There are 128 trampoline slots, one per interface method index, so an
 //     interface may have at most 128 methods; the number of interfaces and
-//     proxies is unbounded. Raise gen/main.go's slots constant and run
-//     `go generate` for more.
+//     proxies is unbounded. Raise slotCount for more.
 //   - The proxy passes as T end to end, but `x.(T)` after converting the proxy
 //     to `any` fails: that assertion goes through getitab, which requires the
 //     concrete type to statically implement T.
@@ -165,8 +160,7 @@
 //     been stable since Go 1.18 introduced the register ABI on arm64, and an
 //     init-time self-check validates every offset against a real, runtime
 //     built itab — so a future layout change fails at startup with a clear
-//     panic instead of corrupting memory. The compatibility range is Go
-//     1.18 through 1.24, guarded by CI across every minor version.
+//     panic instead of corrupting memory. The forged moduledata layout changed
+//     in Go 1.23, so the supported range is Go 1.23+, guarded by CI across
+//     every minor version from there.
 package weave
-
-//go:generate go run ./gen

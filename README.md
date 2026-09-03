@@ -19,11 +19,10 @@ target but runs your interceptors around every method call — Go's answer to
 `java.lang.reflect.Proxy`, built on the observation that an interface value is
 just `(itab, data)` and nothing stops you from forging the itab yourself.
 
-Supports **arm64** and **amd64**, verified on every Go minor version from
-**1.18** through **1.24** (the register ABI's debut on both architectures).
-The runtime layouts the package forges are validated at init against a real
-itab, so an unsupported future Go fails at startup with a clear panic instead
-of corrupting memory.
+Supports **arm64** and **amd64** on **Go 1.23+** — the trampolines are generated
+at runtime, no codegen step. The runtime layouts the package forges are
+validated at init against a real itab, so an unsupported future Go fails at
+startup with a clear panic instead of corrupting memory.
 
 ## What you get
 
@@ -84,24 +83,16 @@ closure context. That rules out closures (their entry expects a context in the
 closure register) and rules out `reflect.MakeFunc` (whose entry `makeFuncStub`
 expects the same).
 
-So the trampolines are ordinary Go functions, generated **at build time** by
-[`gen/main.go`](gen/main.go) into `stubs_gen_arm64.go` / `stubs_gen_amd64.go`.
-Each of the 128 slots is a separate function with the architecture's maximal
-register signature, one per **interface method index**:
+So the trampolines are generated **at runtime** (see [Runtime JIT](#runtime-jit)):
+the 128 generic slots are prefetched at startup, and pointer-spilling shapes are
+compiled at proxy construction. Each slot is a separate bare code pointer with
+the architecture's maximal register signature, one per **interface method
+index**, and forwards to the dispatcher with its own hardcoded index.
 
-```go
-//go:nosplit
-//go:norace
-func stub0(a0, a1, ... a15 uintptr, f0, ... f15 float64) (r0, ... r15 unsafe.Pointer, g0, ... g15 float64) {
-	return Dispatch(0, a0, a1, ... a15, f0, ... f15)
-}
-```
-
-Separate functions give separate code pointers (no closure context needed —
-exactly what `itab.Fun[k]` expects). The slot index doubles as the method's
-index in the interface, and the receiver identifies the proxy, so one slot
-serves method k of **every** interface simultaneously — the number of
-interfaces and proxies is unbounded.
+Separate code pointers mean no closure context — exactly what `itab.Fun[k]`
+expects. The slot index doubles as the method's index in the interface, and the
+receiver identifies the proxy, so one slot serves method k of **every** interface
+simultaneously — the number of interfaces and proxies is unbounded.
 
 `dispatch` looks the method up through the receiver, decodes the registers
 with a private copy of Go's register-assignment algorithm ([abi.go](abi.go)),
@@ -213,28 +204,27 @@ no generated code and keep using the generic trampoline.
   method (arguments or results spilling past the register file, big structs by
   value). When the spilled part carries *pointers*, the stack area's GC
   description belongs to the trampoline, and the generic one describes it as a
-  byte window — a lie the collector cannot be talked out of in time. On Go 1.23+
-  the trampoline is **generated at runtime** (see
-  [Runtime JIT](#runtime-jit)): no codegen step, no shape to spell out. Earlier
-  Go releases cannot forge the moduledata layout and reject such a method at
-  proxy construction. Since register assignment is positional, moving pointer
-  arguments to the front of the signature still avoids the stack area entirely
-  (15 integer words remain on arm64 after the receiver, 8 on amd64).
+  byte window — a lie the collector cannot be talked out of in time. The
+  trampoline is **generated at runtime** (see
+  [Runtime JIT](#runtime-jit)): no codegen step, no shape to spell out. Since
+  register assignment is positional, moving pointer arguments to the front of
+  the signature still avoids the stack area entirely (15 integer words remain on
+  arm64 after the receiver, 8 on amd64).
 - **Interfaces can have at most 128 methods** — slot k serves method k of every
-  interface, so the bound is per-interface, not process-wide. Raise `slots` in
-  `gen/main.go` and run `go generate ./...` for more.
+  interface, so the bound is per-interface, not process-wide. Raise `slotCount`
+  for more.
 - **`any(proxy).(T)` fails.** The proxy passes as `T` end to end, but asserting
   back from an `any` goes through `getitab`, which requires the concrete type
   to statically implement `T`. Use the value directly.
 - **Runtime layout dependencies**, mitigated: the forged structures
-  (`abi.Type`, interface headers, itab) are validated at init against a real
-  runtime itab, so an unsupported Go version fails loudly at startup. CI
-  guards every minor version 1.18–1.24 on amd64 and arm64.
+  (`abi.Type`, interface headers, itab, moduledata) are validated at init
+  against a real runtime itab, so an unsupported Go version fails loudly at
+  startup. The forged moduledata layout changed in Go 1.23, so the floor is Go
+  1.23+; CI guards every minor version from there on amd64 and arm64.
 
 ## Development
 
 ```sh
-go generate ./...                    # regenerate the trampoline stubs
 go vet -unsafeptr=false ./...        # unsafeptr is off by design
 go test ./...                        # arm64 native / amd64 via Rosetta
 go test -race ./...                  # supported on both architectures
@@ -243,8 +233,7 @@ go test -bench . -benchmem ./...
 ```
 
 CI runs the whole matrix (linux/amd64, linux/arm64, darwin/arm64 — vet, fmt,
-tests, race, GC stress) plus a check that `go generate` output is committed
-up to date; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+tests, race, GC stress); see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Layout
 
@@ -258,6 +247,8 @@ up to date; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | `fast_arm64.go`, `fast_amd64.go` | per-architecture `dispatch` and slot table |
 | `redial_arm64.s`, `redial_amd64.s` | register-replay call helper (fast path to target) |
 | `tramp.go` | trampoline selection and slot policy |
-| `gen/main.go` | trampoline generator (`go generate`) |
-| `stubs_gen_*.go` | generated trampolines — do not edit |
+| `jit.go` | runtime JIT: moduledata forge, generic-slot prefetch, shape cache |
+| `jitcode_arm64.go`, `jitcode_amd64.go` | per-architecture trampoline machine code |
+| `jitmem*.go` | executable-page allocation (MAP_JIT on Apple Silicon) |
+| `precise.go` | the stack-area shape a precise trampoline describes |
 | `example_test.go` | runnable declarative-DAO example |
