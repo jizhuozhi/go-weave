@@ -89,8 +89,8 @@ type Invocation struct {
 
 // Arg returns the i'th argument.
 //
-// On the fast trampoline this materialises every argument on first use;
-// interceptors that never look at the arguments pay nothing.
+// This materialises every argument on first use; interceptors that never look
+// at the arguments pay nothing.
 func (c *Invocation) Arg(i int) reflect.Value { return c.Args()[i] }
 
 // NumArg is the number of arguments.

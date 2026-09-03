@@ -4,8 +4,8 @@ package weave
 
 import "unsafe"
 
-// fastTrampoline reports whether this build ships the fast trampoline.
-const fastTrampoline = true
+// hasTrampoline reports whether this build ships the trampoline.
+const hasTrampoline = true
 
 // The trampoline has a maximal register signature: nine integer registers
 // (AX BX CX DI SI R8 R9 R10 R11) and fifteen floating point registers
@@ -13,8 +13,8 @@ const fastTrampoline = true
 // (see jit.go), so every slot gets a distinct bare code pointer with no closure
 // context — exactly what itab.Fun[k] expects.
 
-// fastStub returns the code pointer for method index i of any interface.
-func fastStub(i int) unsafe.Pointer {
+// slotCode returns the code pointer for method index i of any interface.
+func slotCode(i int) unsafe.Pointer {
 	if uint(i) >= uint(slotCount) {
 		panic("weave: interface has more methods than trampoline slots")
 	}

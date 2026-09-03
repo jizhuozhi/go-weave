@@ -23,7 +23,7 @@ import (
 
 // newTrampoline returns the code pointer for method index m.Index.
 func newTrampoline(m *Method) unsafe.Pointer {
-	if !fastTrampoline {
+	if !hasTrampoline {
 		panic("weave: dynamic proxies are only supported on amd64 and arm64")
 	}
 	l := m.layout
@@ -35,7 +35,7 @@ func newTrampoline(m *Method) unsafe.Pointer {
 	if !l.stackPointers() {
 		// Nothing but plain data crosses the stack argument area, which is
 		// exactly what the generic trampoline's byte window describes.
-		return fastStub(m.Index)
+		return slotCode(m.Index)
 	}
 	sh := l.shape(m.Index)
 	// The trampoline is compiled at proxy construction — a one-off, cached cost

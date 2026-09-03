@@ -243,8 +243,8 @@ tests, race, GC stress); see [`.github/workflows/ci.yml`](.github/workflows/ci.y
 | `proxy.go` | public API: `New`, `NewOf`, `As`, `Proxy` |
 | `invocation.go` | public API: `Method`, `Interceptor`, `Invocation`, target invocation |
 | `abi.go` | private copy of Go's register assignment algorithm |
-| `fast.go` | pooled call state, `regBuf`, argument materialisation, result scatter |
-| `fast_arm64.go`, `fast_amd64.go` | per-architecture `dispatch` and slot table |
+| `materialize.go` | pooled call state, `regBuf`, argument materialisation, result scatter |
+| `dispatch_arm64.go`, `dispatch_amd64.go` | per-architecture dispatch entry and slot code |
 | `redial_arm64.s`, `redial_amd64.s` | register-replay call helper (fast path to target) |
 | `tramp.go` | trampoline selection and slot policy |
 | `jit.go` | runtime JIT: moduledata forge, generic-slot prefetch, shape cache |

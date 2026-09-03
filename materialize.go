@@ -1,9 +1,10 @@
 package weave
 
-// The fast trampoline, shared between the two architectures that ship it. The
-// register assignment (abi.go) and this file are architecture independent;
-// only the fixed signature of the stub and its dispatch entry differ, and those
-// live in fast_arm64.go / fast_amd64.go.
+// Argument materialisation and result scattering, shared between the two
+// architectures that ship the trampoline. The register assignment (abi.go) and
+// this file are architecture independent; only the fixed signature of the
+// dispatch entry differs, and that lives in dispatch_arm64.go /
+// dispatch_amd64.go.
 
 import (
 	"reflect"
