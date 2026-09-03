@@ -45,8 +45,8 @@ func redial(fun unsafe.Pointer, regs *regBuf)
 // the results in the same register positions. The receiver is the first
 // integer register, which is how interface calls pass it.
 //
-// Dispatch is exported only so that the precise trampolines StubSource
-// generates — which live in the caller's own package — can reach it. Its
+// Dispatch is exported only so that the runtime-generated precise trampolines
+// can reach it. Its
 // signature is the architecture's register file and changes with the
 // architecture; nothing outside generated code should call it.
 //

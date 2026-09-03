@@ -1,10 +1,11 @@
+//go:build (amd64 || arm64) && go1.23
+
 package weave
 
 // Precise trampolines: methods whose pointers travel through the caller's
 // stack argument area. The generic trampoline describes that area as a byte
-// window, so those methods are rejected unless a generated precise trampoline
-// is registered for their shape (stubs_precise_arm64_test.go holds the ones
-// these tests need, exactly as StubSource emits them).
+// window, so those methods need a precise trampoline, generated at runtime by
+// the JIT. These tests exercise that runtime-generated path end to end.
 
 import (
 	"fmt"
@@ -119,22 +120,18 @@ func wantStrs() [16]string {
 	return a
 }
 
-// hasStub reports whether a precise trampoline is registered for method idx of
-// t, i.e. whether this architecture has generated stubs checked in.
-func hasStub(t reflect.Type, idx int) bool {
-	l := newABILayout(t.Method(idx).Type)
-	return !l.stackPointers() || lookupStub(l.shape(idx)) != nil
-}
-
-// requireStubs skips the test unless a precise trampoline is registered for
-// every pointer-spilling method of it, i.e. unless this architecture has the
-// generated stubs checked in.
-func requireStubs(t *testing.T, it reflect.Type) {
+// requireJIT skips the test unless the runtime JIT can generate a trampoline
+// for every pointer-spilling method of it. Generating here also warms the cache,
+// so the test bodies exercise the cached path.
+func requireJIT(t *testing.T, it reflect.Type) {
 	t.Helper()
 	for i := 0; i < it.NumMethod(); i++ {
-		if !hasStub(it, i) {
-			t.Skipf("no precise trampolines generated for %s/%s; see StubSource",
-				runtime.GOOS, runtime.GOARCH)
+		l := newABILayout(it.Method(i).Type)
+		if !l.stackPointers() {
+			continue
+		}
+		if jitTrampoline(l.shape(i)) == nil {
+			t.Skipf("runtime JIT unavailable on %s/%s", runtime.GOOS, runtime.GOARCH)
 		}
 	}
 }
@@ -144,7 +141,7 @@ func requireStubs(t *testing.T, it reflect.Type) {
 // and results are only reachable through the caller's stack argument area,
 // described by the generated pointer map.
 func TestPreciseStackPointers(t *testing.T) {
-	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
+	requireJIT(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	churn := func(c *Invocation) []reflect.Value {
 		runtime.GC()
@@ -195,7 +192,7 @@ func TestPreciseStackPointers(t *testing.T) {
 // TestPreciseStackPointersInterceptors reads and rewrites stack-assigned
 // pointer arguments, which routes the call through the reflect fallback.
 func TestPreciseStackPointersInterceptors(t *testing.T) {
-	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
+	requireJIT(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	var seen string
 	p := New[StackPtrs](stackPtrsImpl{}, func(c *Invocation) []reflect.Value {
@@ -223,7 +220,7 @@ func TestPreciseStackPointersInterceptors(t *testing.T) {
 // goroutines, each with its own stack, so stack growth and moves happen while
 // pointers sit in the caller's argument area.
 func TestPreciseStackPointersConcurrent(t *testing.T) {
-	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
+	requireJIT(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	p := New[StackPtrs](stackPtrsImpl{}, func(c *Invocation) []reflect.Value {
 		return c.Proceed()
@@ -262,7 +259,7 @@ func collect16(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, 
 // Those offsets are computed by the generator, and an offset past the area would
 // land in the caller's frame — so the canary sits exactly there.
 func TestPreciseCallerFrameIntact(t *testing.T) {
-	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
+	requireJIT(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	p := New[StackPtrs](stackPtrsImpl{})
 	a := wantStrs()
@@ -290,7 +287,7 @@ func TestPreciseCallerFrameIntact(t *testing.T) {
 // map and by nothing else. A collection inside the interceptor then has to keep
 // them alive.
 func TestPreciseTemporariesKeepAlive(t *testing.T) {
-	requireStubs(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
+	requireJIT(t, reflect.TypeOf((*StackPtrs)(nil)).Elem())
 
 	p := New[StackPtrs](stackPtrsImpl{}, func(c *Invocation) []reflect.Value {
 		for i := 0; i < 4; i++ {
@@ -319,7 +316,7 @@ func TestPreciseTemporariesKeepAlive(t *testing.T) {
 // inside the call, so the only reference to them the collector can be sure of
 // is the one in the caller's stack argument area.
 func TestPreciseExoticShapes(t *testing.T) {
-	requireStubs(t, reflect.TypeOf((*Exotic)(nil)).Elem())
+	requireJIT(t, reflect.TypeOf((*Exotic)(nil)).Elem())
 
 	churn := func(c *Invocation) []reflect.Value {
 		runtime.GC()
@@ -358,7 +355,7 @@ func TestPreciseExoticShapes(t *testing.T) {
 // was collected, and under GODEBUG=clobberfree=1 its payload reads back as
 // garbage.
 func TestPreciseIfaceKeepAlive(t *testing.T) {
-	requireStubs(t, reflect.TypeOf((*Exotic)(nil)).Elem())
+	requireJIT(t, reflect.TypeOf((*Exotic)(nil)).Elem())
 
 	p := New[Exotic](exoticImpl{}, func(c *Invocation) []reflect.Value {
 		runtime.GC()
@@ -382,8 +379,9 @@ func TestPreciseIfaceKeepAlive(t *testing.T) {
 	}
 }
 
-// TestShape pins the shapes of the three methods: they are what the generated
-// trampolines claim, and a change here means the checked-in stubs are stale.
+// TestShape pins the shapes of the three methods: they describe the stack area
+// the JIT trampoline's argument map must cover, and a change here means the
+// ABI layout code and the trampoline drift apart.
 func TestShape(t *testing.T) {
 	it := reflect.TypeOf((*StackPtrs)(nil)).Elem()
 	for i := 0; i < it.NumMethod(); i++ {
@@ -400,76 +398,5 @@ func TestShape(t *testing.T) {
 			t.Errorf("%s: odd word counts in %s", m.Name, sh)
 		}
 		t.Logf("%s: %s", m.Name, sh)
-	}
-}
-
-// TestStubSourceMatchesRegistry generates the source for the test interfaces
-// and checks that it declares exactly the shapes they need — the guard against
-// the generator and the layout drifting apart.
-func TestStubSourceMatchesRegistry(t *testing.T) {
-	all := []reflect.Type{
-		reflect.TypeOf((*StackPtrs)(nil)).Elem(),
-		reflect.TypeOf((*Exotic)(nil)).Elem(),
-	}
-	src := stubSource("weave", "", "", all...)
-	for _, it := range all {
-		for i := 0; i < it.NumMethod(); i++ {
-			l := newABILayout(it.Method(i).Type)
-			if !l.stackPointers() {
-				continue
-			}
-			sh := l.shape(i)
-			if !strings.Contains(src, "func "+sh.name()+"(") {
-				t.Errorf("generated source has no trampoline for %s.%s (%s)", it, it.Method(i).Name, sh)
-			}
-			if !strings.Contains(src, "Func: "+sh.name()) {
-				t.Errorf("generated source does not register %s", sh.name())
-			}
-		}
-	}
-	if !strings.Contains(src, "//go:build "+runtime.GOARCH) {
-		t.Error("generated source has no build constraint for the current architecture")
-	}
-	// The generated file must be self-contained Go: an unqualified in-package
-	// generation calls Dispatch and RegisterStub directly.
-	for _, want := range []string{"//go:nosplit", "//go:norace", "= Dispatch(", "runtime.KeepAlive", "RegisterStub(StubSpec{"} {
-		if !strings.Contains(src, want) {
-			t.Errorf("generated source is missing %q", want)
-		}
-	}
-}
-
-// TestStubSourceEmptyForRegisterOnlyInterface: an interface that keeps its
-// pointers in registers needs no generated code at all.
-func TestStubSourceEmptyForRegisterOnlyInterface(t *testing.T) {
-	src := stubSource("app", weaveImportPath, "weave", reflect.TypeOf((*Service)(nil)).Elem())
-	if strings.Contains(src, "func weaveStub_") {
-		t.Errorf("Service needs no precise trampoline, got:\n%s", src)
-	}
-	if strings.Contains(src, "import") {
-		t.Error("the empty file should not import anything")
-	}
-}
-
-// TestRegisterStubValidatesShape: a trampoline whose signature does not match
-// the shape it claims would hand the collector a wrong pointer map, so
-// registration rejects it.
-func TestRegisterStubValidatesShape(t *testing.T) {
-	cases := []struct {
-		name string
-		spec StubSpec
-	}{
-		{"not a function", StubSpec{Func: 42}},
-		{"wrong arity", StubSpec{ArgWords: 2, ArgPtrs: 0b01, Func: func() {}}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				if recover() == nil {
-					t.Fatal("expected a panic")
-				}
-			}()
-			RegisterStub(tc.spec)
-		})
 	}
 }

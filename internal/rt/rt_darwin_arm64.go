@@ -24,7 +24,8 @@ static int weave_jit_selftest(void) {
 	pthread_jit_write_protect_np(1); // enable write-protect: RW -> RX
 	sys_icache_invalidate(p, 4);
 	((void (*)(void))p)(); // must not fault
-	pthread_jit_write_protect_np(0);
+	// Leave the thread in the default RX state; toggling back to RW here would
+	// poison the thread for any MAP_JIT page it executes afterwards.
 	munmap(p, 4096);
 	return 0;
 }

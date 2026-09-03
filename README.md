@@ -176,83 +176,49 @@ marks as pointer-holding into a parallel `ptrs [N]unsafe.Pointer` array the
 collector *does* scan — before the first allocation. Verified with
 `GODEBUG=clobberfree=1`.
 
-### Precise trampolines
+### Runtime JIT
 
-The same dilemma reappears, harder, for arguments and results that spill onto
-the stack. The caller's stack argument area is described to the collector by the
-*callee's* argument pointer map — the trampoline's — and the generic trampoline
-declares it as one opaque `[480]byte`. Fine for integers; a lie for pointers,
-and one that cannot be corrected from Go, because the correction would have to
-happen before the trampoline's first instruction.
+Methods that move pointers through the caller's stack argument area need a
+trampoline whose argument pointer map describes that area word by word. The
+generic trampoline declares it as one opaque `[480]byte` — fine for integers, a
+lie for pointers — and the lie cannot be corrected from Go, because the
+correction would have to happen before the trampoline's first instruction.
 
-So for those methods the trampoline stops being generic. `weave.StubSource`
-emits one function per *shape* of stack area, spelling it out word by word:
+So those trampolines are generated **at runtime**, at proxy construction, one per
+*shape* of stack area (argument words then result words, each marked pointer or
+not). The proxy mmaps an executable page, writes the trampoline's machine code —
+the same register shuffle the generic stubs perform — and builds a moduledata
+whose argument pointer map marks exactly the pointer words. The module is
+appended to the runtime's moduledata list, so `findfunc` recognises the injected
+code and the collector scans every pointer in the stack area exactly as it would
+for a compiled function. The cost is a one-off per shape, cached; the call site
+stays a plain indirect itab call.
 
-```go
-//go:nosplit
-//go:norace
-func weaveStub_m1_a18_15555_r0_0(
-	a0 uintptr, /* ... the full register file ... */ f15 float64,
-	// 18 words of stack-assigned arguments:
-	w0 unsafe.Pointer, // string data
-	w1 uintptr,        // string length
-	// ...
-) (r0 unsafe.Pointer, /* ... */ g15 float64) {
-	base := unsafe.Pointer(&w0)
-	return weave.Dispatch(1, a0, /* ... */ f15, base)
-}
-```
+Two details are load-bearing:
 
-The compiler now emits an exactly correct pointer map for the area, so every
-pointer in it is visible to the collector **from function entry** — no window
-to close. The shape is all that matters, never the types that produced it:
-stack assignment is sequential and every pointer is word aligned, so a sequence
-of pointer and non-pointer words reproduces the area byte for byte.
-
-Generate them with a three-line `go generate` step:
-
-```go
-//go:generate go run ./internal/gentramp
-
-func main() {
-	src := weave.StubSource("myapp", reflect.TypeOf((*myapp.Store)(nil)).Elem())
-	os.WriteFile("weave_stubs_gen.go", []byte(src), 0o644)
-}
-```
-
-The generated `init` registers each trampoline, `RegisterStub` verifies that
-its signature really matches the shape it claims (a mismatch would hand the
-collector a wrong map), and proxy construction picks it up. Three details are
-load-bearing:
-
-- the whole area, **results included, is declared as parameters** — a declared
-  result belongs to the compiler, which zeroes it on entry and may write it
-  back on return, overwriting what the dispatcher stored through the area
-  pointer;
 - the result words still hold the caller's old frame contents while the new map
   already claims they are pointers, so the trampoline **clears them before its
-  first call** — a `nosplit` function has no safe point until then, so the
-  collector never sees a stale word;
-- the pointer words are **kept alive across the dispatcher call** with
-  `runtime.KeepAlive` — the body otherwise uses nothing but the area's address,
-  so without it the argument liveness would mark those words dead at the call
-  and the collector would not scan them.
+  first call** — it is pure machine code with no safe point until the call, so
+  the collector never sees a stale word;
+- the forged `moduledata` layout is version-specific, so the JIT path is gated
+  to Go 1.23+; earlier releases reject pointer-spilling methods (see
+  [Limitations](#limitations)).
 
-Interfaces whose pointers stay in registers need none of this and generate
-nothing.
+Methods whose pointers stay inside the register file — nearly all of them — need
+no generated code and keep using the generic trampoline.
 
 ## Limitations
 
 - **Stack-passed arguments and results are supported** up to 480 bytes per
   method (arguments or results spilling past the register file, big structs by
-  value). When the spilled part carries *pointers*, the method needs a precise
-  trampoline: the stack area's GC description belongs to the trampoline, and the
-  generic one describes it as a byte window — a lie the collector cannot be
-  talked out of in time. `weave.StubSource` generates the precise trampolines
-  for a given set of interfaces (see [Precise trampolines](#precise-trampolines));
-  without one such a method is rejected at proxy construction, with the shape
-  spelled out. Since register assignment is positional, moving pointer arguments
-  to the front of the signature usually avoids the generation step entirely
+  value). When the spilled part carries *pointers*, the stack area's GC
+  description belongs to the trampoline, and the generic one describes it as a
+  byte window — a lie the collector cannot be talked out of in time. On Go 1.23+
+  the trampoline is **generated at runtime** (see
+  [Runtime JIT](#runtime-jit)): no codegen step, no shape to spell out. Earlier
+  Go releases cannot forge the moduledata layout and reject such a method at
+  proxy construction. Since register assignment is positional, moving pointer
+  arguments to the front of the signature still avoids the stack area entirely
   (15 integer words remain on arm64 after the receiver, 8 on amd64).
 - **Interfaces can have at most 128 methods** — slot k serves method k of every
   interface, so the bound is per-interface, not process-wide. Raise `slots` in
