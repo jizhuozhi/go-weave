@@ -60,9 +60,11 @@ func init() {
 
 // --- runtime layout mirrors ------------------------------------------------
 //
-// These mirror Go 1.23+ runtime layouts. The field order and types are
-// load-bearing; TestJITFindfunc verifies the offsets that matter (text, pctab,
-// gofunc, next) against the values the runtime actually uses.
+// The field order and types are load-bearing; TestJITFindfunc verifies the
+// offsets that matter (text, pctab, gofunc, next) against the values the
+// runtime actually uses. jitModuledata is version-split across
+// moduledata_go1*.go: runtime.moduledata gained covctrs in 1.20, inittasks in
+// 1.21, and moved bad next to hasmain in 1.23.
 
 // pcHeader mirrors runtime.pcHeader.
 type pcHeader struct {
@@ -92,23 +94,9 @@ type findfuncbucket struct {
 	subbuckets [16]byte
 }
 
-// rfunc mirrors runtime._func, minus the trailing variable arrays.
-type rfunc struct {
-	entryOff    uint32
-	nameOff     int32
-	args        int32
-	deferreturn uint32
-	pcsp        uint32
-	pcfile      uint32
-	pcln        uint32
-	npcdata     uint32
-	cuOffset    uint32
-	startLine   int32
-	funcID      uint8
-	flag        uint8
-	_           [1]byte
-	nfuncdata   uint8
-}
+// rfunc mirrors runtime._func, minus the trailing variable arrays. It gained
+// startLine in Go 1.20, so the type is version-split (rfunc_go118.go /
+// rfunc_go120.go); the code below only touches fields present in every version.
 
 // stackmap mirrors runtime.stackmap.
 type stackmap struct {
@@ -149,52 +137,11 @@ type bitvector struct {
 type nameOff = int32
 type typeOff = uint32
 
-// jitModuledata mirrors runtime.moduledata (Go 1.23+).
-type jitModuledata struct {
-	pcHeader     *pcHeader
-	funcnametab  []byte
-	cutab        []uint32
-	filetab      []byte
-	pctab        []byte
-	pclntable    []byte
-	ftab         []functab
-	findfunctab  uintptr
-	minpc, maxpc uintptr
-
-	text, etext           uintptr
-	noptrdata, enoptrdata uintptr
-	data, edata           uintptr
-	bss, ebss             uintptr
-	noptrbss, enoptrbss   uintptr
-	covctrs, ecovctrs     uintptr
-	end, gcdata, gcbss    uintptr
-	types, etypes         uintptr
-	rodata                uintptr
-	gofunc                uintptr
-
-	textsectmap []textsect
-	typelinks   []int32
-	itablinks   []*itab
-
-	ptab []ptabEntry
-
-	pluginpath string
-	pkghashes  []modulehash
-
-	inittasks []*initTask
-
-	modulename   string
-	modulehashes []modulehash
-
-	hasmain uint8
-	bad     bool
-
-	gcdatamask, gcbssmask bitvector
-
-	typemap map[typeOff]*abiType
-
-	next *jitModuledata
-}
+// jitModuledata mirrors runtime.moduledata. The exact field order is
+// version-specific, so the type is defined per version segment in
+// moduledata_go1*.go; every segment exposes the same field names the code below
+// touches (pcHeader, funcnametab, pctab, pclntable, ftab, findfunctab, minpc,
+// maxpc, text, etext, gofunc, next).
 
 // pcdata / funcdata table indexes (mirror internal/abi).
 const (
@@ -255,7 +202,6 @@ func buildJITModule(code []byte, argWords, retWords int, argPtrs, retPtrs uint64
 		args:      int32(totalWords * 8),
 		pcsp:      1, // pcsp table at pctab[1]; 0 would read as an external func
 		npcdata:   npcdata,
-		startLine: 1,
 		funcID:    0,
 		flag:      0,
 		nfuncdata: nfuncdata,

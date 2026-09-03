@@ -14,18 +14,20 @@ import (
 // TestJITFindfunc verifies the layout mirror is exact and a registered module
 // is discoverable by runtime.FuncForPC.
 func TestJITFindfunc(t *testing.T) {
-	// Sanity: the mirror's field offsets must agree with the runtime's.
-	if got := unsafe.Offsetof(lastmoduledatap.text); got != 176 {
-		t.Fatalf("moduledata.text offset = %d, want 176", got)
+	// Sanity: the mirror's field offsets must agree with the runtime's. The
+	// expected values are version-specific (md*Off constants live next to the
+	// jitModuledata mirror for this Go version).
+	if got := unsafe.Offsetof(lastmoduledatap.text); got != mdTextOff {
+		t.Fatalf("moduledata.text offset = %d, want %d", got, mdTextOff)
 	}
-	if got := unsafe.Offsetof(lastmoduledatap.gofunc); got != 320 {
-		t.Fatalf("moduledata.gofunc offset = %d, want 320", got)
+	if got := unsafe.Offsetof(lastmoduledatap.gofunc); got != mdGofuncOff {
+		t.Fatalf("moduledata.gofunc offset = %d, want %d", got, mdGofuncOff)
 	}
-	if got := unsafe.Offsetof(lastmoduledatap.next); got != 576 {
-		t.Fatalf("moduledata.next offset = %d, want 576", got)
+	if got := unsafe.Offsetof(lastmoduledatap.next); got != mdNextOff {
+		t.Fatalf("moduledata.next offset = %d, want %d", got, mdNextOff)
 	}
-	if got := unsafe.Offsetof(lastmoduledatap.pctab); got != 80 {
-		t.Fatalf("moduledata.pctab offset = %d, want 80", got)
+	if got := unsafe.Offsetof(lastmoduledatap.pctab); got != mdPctabOff {
+		t.Fatalf("moduledata.pctab offset = %d, want %d", got, mdPctabOff)
 	}
 
 	// This first step only probes findfunc, so a plain writable mapping stands

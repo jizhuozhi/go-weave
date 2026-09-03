@@ -19,10 +19,11 @@ target but runs your interceptors around every method call — Go's answer to
 `java.lang.reflect.Proxy`, built on the observation that an interface value is
 just `(itab, data)` and nothing stops you from forging the itab yourself.
 
-Supports **arm64** and **amd64** on **Go 1.23+** — the trampolines are generated
-at runtime, no codegen step. The runtime layouts the package forges are
-validated at init against a real itab, so an unsupported future Go fails at
-startup with a clear panic instead of corrupting memory.
+Supports **arm64** and **amd64**, verified on every Go minor version from
+**1.18** through **1.27**. The trampolines are generated at runtime, no codegen
+step. The runtime layouts the package forges are validated at init against a
+real itab, so an unsupported future Go fails at startup with a clear panic
+instead of corrupting memory.
 
 ## What you get
 
@@ -191,9 +192,10 @@ Two details are load-bearing:
   already claims they are pointers, so the trampoline **clears them before its
   first call** — it is pure machine code with no safe point until the call, so
   the collector never sees a stale word;
-- the forged `moduledata` layout is version-specific, so the JIT path is gated
-  to Go 1.23+; earlier releases reject pointer-spilling methods (see
-  [Limitations](#limitations)).
+- the forged `moduledata` layout is version-specific, so the mirror is split
+  across the Go versions that changed it (`covctrs` in 1.20, `inittasks` in
+  1.21, `bad` moved in 1.23, `epclntab` in 1.26, `typelinks`/`itablinks` removed
+  in 1.27) — every minor version from 1.18 through 1.27 is covered.
 
 Methods whose pointers stay inside the register file — nearly all of them — need
 no generated code and keep using the generic trampoline.
@@ -217,10 +219,10 @@ no generated code and keep using the generic trampoline.
   back from an `any` goes through `getitab`, which requires the concrete type
   to statically implement `T`. Use the value directly.
 - **Runtime layout dependencies**, mitigated: the forged structures
-  (`abi.Type`, interface headers, itab, moduledata) are validated at init
-  against a real runtime itab, so an unsupported Go version fails loudly at
-  startup. The forged moduledata layout changed in Go 1.23, so the floor is Go
-  1.23+; CI guards every minor version from there on amd64 and arm64.
+  (`abi.Type`, interface headers, itab, moduledata, `_func`) are validated at
+  init against a real runtime itab, so an unsupported Go version fails loudly
+  at startup. The forged layouts are version-split across every minor version
+  from Go 1.18 through 1.27, guarded by CI on amd64 and arm64.
 
 ## Development
 
@@ -251,5 +253,7 @@ darwin/amd64 — vet, fmt, tests, race, GC stress); see
 | `jit.go` | runtime JIT: moduledata forge, generic-slot prefetch, shape cache |
 | `jitcode_arm64.go`, `jitcode_amd64.go` | per-architecture trampoline machine code |
 | `jitmem*.go` | executable-page allocation (MAP_JIT on Apple Silicon) |
+| `moduledata_go1*.go` | version-split `moduledata` mirror (1.18–1.27) |
+| `rfunc_go1*.go` | version-split `_func` mirror (startLine in 1.20) |
 | `precise.go` | the stack-area shape a precise trampoline describes |
 | `example_test.go` | runnable declarative-DAO example |

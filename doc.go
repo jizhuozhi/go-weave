@@ -104,8 +104,9 @@
 // Methods whose pointers stay inside the register file — nearly all of them —
 // need no generated code and keep using the generic trampoline.
 //
-// The forged moduledata layout is version-specific; it changed in Go 1.23, so
-// that is the supported floor.
+// The forged moduledata layout is version-specific, so the mirror is split
+// across the Go versions that changed it (see moduledata_go1*.go); each
+// version segment is guarded by CI.
 //
 // # Decoding and encoding arguments
 //
@@ -160,7 +161,7 @@
 //     been stable since Go 1.18 introduced the register ABI on arm64, and an
 //     init-time self-check validates every offset against a real, runtime
 //     built itab — so a future layout change fails at startup with a clear
-//     panic instead of corrupting memory. The forged moduledata layout changed
-//     in Go 1.23, so the supported range is Go 1.23+, guarded by CI across
-//     every minor version from there.
+//     panic instead of corrupting memory. The forged moduledata and _func
+//     layouts are version-split across every minor version from Go 1.18
+//     through 1.27, guarded by CI.
 package weave
