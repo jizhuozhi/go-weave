@@ -5,6 +5,11 @@ package weave
 // pcQuantum is the minimum instruction size in bytes (sys.PCQuantum).
 const pcQuantum = 1
 
+// jitFrameSize is the number of bytes jitStubCode reserves below the incoming
+// stack pointer (the SUBQ immediate in its prologue). funcspdelta must report
+// exactly this at the call site or the runtime's unwind fails.
+const jitFrameSize = 0xd0
+
 // jitStubCode emits the trampoline machine code for method index idx — the same
 // register shuffle the generated amd64 stubs perform (AX,BX,CX,DI,SI,R8..R11),
 // with an absolute call to dispatch via MOVABS so the mmap'd page and the text
