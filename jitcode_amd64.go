@@ -6,9 +6,13 @@ package weave
 const pcQuantum = 1
 
 // jitFrameSize is the number of bytes jitStubCode reserves below the incoming
-// stack pointer (the SUBQ immediate in its prologue). funcspdelta must report
-// exactly this at the call site or the runtime's unwind fails.
+// stack pointer (the SUBQ immediate in its prologue).
 const jitFrameSize = 0xd0
+
+// jitSPDelta is what funcspdelta must report at the call site: the total bytes
+// the stack pointer moved from function entry. The prologue's PUSHQ BP already
+// moved SP by 8 before the SUBQ, so the delta is 8 + jitFrameSize.
+const jitSPDelta = jitFrameSize + 8
 
 // jitStubCode emits the trampoline machine code for method index idx — the same
 // register shuffle the generated amd64 stubs perform (AX,BX,CX,DI,SI,R8..R11),

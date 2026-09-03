@@ -179,13 +179,13 @@ const (
 
 // jitPCSPTable encodes the constant spdelta the trampoline's fixed-size frame
 // produces. pcvalue seeds val at -1 and zig-zag decodes each uvdelta, so the
-// single pair that reaches jitFrameSize is 2*(jitFrameSize+1), varint-encoded.
+// single pair that reaches jitSPDelta is 2*(jitSPDelta+1), varint-encoded.
 // The pc-delta must advance past the whole function: pcvalue passes
 // `pc == f.entry()` as its "first" flag, and a zero pc-delta would keep that
 // true forever, making the zero end-of-table marker read as a real pair and
 // driving step off the end of the slice.
 func jitPCSPTable(codeLen int) []byte {
-	uv := uint32(jitFrameSize) + 1
+	uv := uint32(jitSPDelta) + 1
 	uv *= 2
 	var tab []byte
 	for uv >= 0x80 {
