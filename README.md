@@ -61,7 +61,7 @@ u := dao.GetUser(ctx, 2)               // a real *User, via a real query plan
 The interceptor inspects `c.Method.Name`, binds `c.Args()` to the query and
 produces the results — the same role MyBatis' XML mapping plays, minus the
 annotation processing and codegen. A runnable version of this example is in
-[`example_test.go`](example_test.go); `go test` executes it. The same shape
+[`examples/dao`](examples/dao); run it with `cd examples/dao && go run .`. The same shape
 gives you RPC stubs (interface = the wire contract), middleware for arbitrary
 business interfaces, and runtime mocks without gomock's generation step.
 
@@ -257,4 +257,5 @@ darwin/arm64; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | `moduledata_go1*.go` | version-split `moduledata` mirror (1.18–1.27) |
 | `rfunc_go1*.go` | version-split `_func` mirror (startLine in 1.20) |
 | `precise.go` | the stack-area shape a precise trampoline describes |
-| `example_test.go` | runnable declarative-DAO example |
+| `examples/dao` | runnable declarative-DAO example |
+| `examples/spi` | SPI services with unified auth/trace advice (Spring-style) |

@@ -1,0 +1,8 @@
+<mapper namespace="UserDAO">
+    <select id="GetUser">
+        SELECT id, name FROM users WHERE id = #{id}
+    </select>
+    <select id="ListUsers">
+        SELECT name FROM users LIMIT #{limit}
+    </select>
+</mapper>
