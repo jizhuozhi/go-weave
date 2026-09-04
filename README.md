@@ -234,9 +234,10 @@ GODEBUG=clobberfree=1 go test ./...  # GC safety stress
 go test -bench . -benchmem ./...
 ```
 
-CI runs the whole matrix (linux/amd64, linux/arm64, darwin/arm64,
-darwin/amd64 — vet, fmt, tests, race, GC stress); see
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs two matrices: latest Go across all four platforms (linux/amd64,
+linux/arm64, darwin/arm64, darwin/amd64 — vet, fmt, tests, race, GC stress),
+plus every minor version Go 1.18 through 1.27 on linux/amd64, linux/arm64 and
+darwin/arm64; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Layout
 

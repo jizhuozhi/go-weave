@@ -36,13 +36,14 @@ jobs:
   # 1.20, inittasks in 1.21, bad moved in 1.23, epclntab in 1.26, typelinks/
   # itablinks removed in 1.27). Each segment has its own mirror, and this matrix
   # guards every minor version from the floor to the latest across both linux
-  # architectures.
+  # architectures plus darwin/arm64 — the latter exercises the MAP_JIT cgo shim
+  # (internal/rt) against every toolchain, not just the latest.
   versions:
     strategy:
       fail-fast: false
       matrix:
         go: ["1.18", "1.19", "1.20", "1.21", "1.22", "1.23", "1.24", "1.25", "1.26", "1.27"]
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
