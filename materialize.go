@@ -26,6 +26,10 @@ type callState struct {
 
 var statePool = sync.Pool{New: func() any { return new(callState) }}
 
+// stackWords is the number of pointer-sized words in the stack argument area
+// the trampoline can capture (stackWindow bytes on both amd64 and arm64).
+const stackWords = stackWindow / 8
+
 // regBuf holds the raw argument and result registers for the duration of a call.
 //
 // It mirrors runtime.RegArgs: ints holds the bit pattern of every integer
@@ -39,6 +43,12 @@ type regBuf struct {
 	ints   [intArgRegs]uintptr
 	ptrs   [intArgRegs]unsafe.Pointer
 	floats [floatArgRegs]float64
+	// stackPtrs is the GC-visible mirror of the stack argument area's pointer
+	// words. Result pointers are scattered into stackBuf, a plain byte array
+	// the collector does not scan; without the mirror a collection in the
+	// window before dispatch copies the results back to the caller's argument
+	// area would drop them. Word i mirrors stack word i.
+	stackPtrs [stackWords]unsafe.Pointer
 }
 
 func add(p unsafe.Pointer, off uintptr) unsafe.Pointer {
@@ -194,6 +204,31 @@ func materializeIface(t reflect.Type, steps []step, regs *regBuf, stack unsafe.P
 	return slot
 }
 
+// mirrorStepPtr records a pointer word scattered into a register or stack slot
+// in the GC-visible mirror. Results land in regs.ints and stackBuf, neither of
+// which the collector scans; a collection between the scatter and dispatch
+// copying them back to the caller's argument area would otherwise drop them.
+func mirrorStepPtr(regs *regBuf, st step, stack unsafe.Pointer) {
+	p := *(*unsafe.Pointer)(stepAddr(st, regs, stack))
+	switch st.kind {
+	case stepPointer:
+		regs.ptrs[st.ireg] = p
+	case stepStack:
+		regs.stackPtrs[st.stkOff/uintptr(ptrSize)] = p
+	}
+}
+
+// mirrorStackPtrs mirrors every pointer inside a stack-assigned value, reading
+// them back from the just-scattered copy at base. stkOff is the value's offset
+// in the stack argument area.
+func mirrorStackPtrs(regs *regBuf, stkOff uintptr, t reflect.Type, base unsafe.Pointer) {
+	var offs []uintptr
+	ptrOffsets(t, 0, &offs)
+	for _, off := range offs {
+		regs.stackPtrs[(stkOff+off)/uintptr(ptrSize)] = *(*unsafe.Pointer)(add(base, off))
+	}
+}
+
 // scatterValue copies one result out of v into the registers or stack slots
 // the ABI assigned to it.
 func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, stack unsafe.Pointer) {
@@ -214,9 +249,13 @@ func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, s
 			return
 		case stepIntReg, stepPointer:
 			writeScalar(dst, v, st.size)
+			if st.kind == stepPointer {
+				regs.ptrs[st.ireg] = *(*unsafe.Pointer)(dst)
+			}
 			return
 		case stepStack:
 			memcpy(dst, valueMem(v, t), st.size)
+			mirrorStackPtrs(regs, st.stkOff, t, dst)
 			return
 		}
 	}
@@ -229,12 +268,14 @@ func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, s
 			h := (*[2]uintptr)(unsafe.Pointer(&s))
 			writeWord(stepAddr(steps[0], regs, stack), h[0], steps[0].size)
 			writeWord(stepAddr(steps[1], regs, stack), h[1], steps[1].size)
+			mirrorStepPtr(regs, steps[0], stack)
 			return
 		case reflect.Slice:
 			h := [3]uintptr{v.Pointer(), uintptr(v.Len()), uintptr(v.Cap())}
 			for i := range steps {
 				writeWord(stepAddr(steps[i], regs, stack), h[i], steps[i].size)
 			}
+			mirrorStepPtr(regs, steps[0], stack)
 			return
 		case reflect.Complex64, reflect.Complex128:
 			x := v.Complex()
@@ -249,6 +290,9 @@ func scatterValue(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, s
 	base := valueMem(v, t)
 	for _, st := range steps {
 		memcpy(stepAddr(st, regs, stack), add(base, st.offset), st.size)
+		if st.kind == stepPointer {
+			regs.ptrs[st.ireg] = *(*unsafe.Pointer)(add(base, st.offset))
+		}
 	}
 }
 
@@ -264,10 +308,15 @@ func scatterIface(v reflect.Value, t reflect.Type, steps []step, regs *regBuf, s
 		mem := stepAddr(steps[0], regs, stack)
 		*(*unsafe.Pointer)(mem) = unsafe.Pointer(i.tab)
 		*(*unsafe.Pointer)(add(mem, ptrSize)) = i.data
+		// The data word is the only pointer the collector must keep (the itab
+		// is rooted by the runtime); mirror it so a collection before dispatch
+		// copies the results back does not drop the boxed value.
+		regs.stackPtrs[steps[0].stkOff/uintptr(ptrSize)+1] = i.data
 		return
 	}
 	*(*uintptr)(stepAddr(steps[0], regs, stack)) = uintptr(unsafe.Pointer(i.tab))
 	*(*unsafe.Pointer)(stepAddr(steps[1], regs, stack)) = i.data
+	regs.ptrs[steps[1].ireg] = i.data
 }
 
 // valueMem returns the address of v's storage, copying it into a temporary

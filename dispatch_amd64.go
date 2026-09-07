@@ -71,6 +71,7 @@ func Dispatch(idx int, a0, a1, a2, a3, a4, a5, a6, a7, a8 uintptr,
 	regs.ints = ints
 	regs.floats = [floatArgRegs]float64{f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14}
 	regs.ptrs = prePtrs
+	regs.stackPtrs = [stackWords]unsafe.Pointer{}
 
 	// Stack-assigned arguments: copy them out of the caller's outgoing area
 	// into the pooled buffer. The raw stack pointer must not be stored in
