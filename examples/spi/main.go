@@ -47,6 +47,11 @@ func (englishGreeter) Hello(_ context.Context, name string) string {
 	return "hello, " + name
 }
 
+// ctxKey 用自定义类型做 context key，避免裸 string key 跨包冲突（SA1029）。
+type ctxKey string
+
+const callerKey ctxKey = "caller"
+
 // ===== 容器：注册即代理（ServiceLoader + Spring AOP）=====
 
 // Register 把实现加载成 SPI 服务，返回被统一切面增强的接口代理。一个函数
@@ -60,7 +65,7 @@ func Register[T any](impl T) T {
 
 func auth(c *weave.Invocation) []reflect.Value {
 	ctx := c.Arg(0).Interface().(context.Context)
-	caller, _ := ctx.Value("caller").(string)
+	caller, _ := ctx.Value(callerKey).(string)
 	if caller == "" {
 		fmt.Printf("auth: DENY %s (no caller)\n", c.Method.Name)
 		return zeroResults(c)
@@ -88,7 +93,7 @@ func main() {
 	storage := Register[Storage](&memoryStorage{m: map[string]string{"name": "ada"}})
 	greeter := Register[Greeter](englishGreeter{})
 
-	ctx := context.WithValue(context.Background(), "caller", "alice")
+	ctx := context.WithValue(context.Background(), callerKey, "alice")
 
 	name, err := storage.Get(ctx, "name")
 	fmt.Println("got:", name, err)

@@ -68,6 +68,10 @@ jobs:
       - uses: dominikh/staticcheck-action@v1
         with:
           version: "2025.1.1"
+          # By default the action installs its own latest Go and runs staticcheck
+          # with it; that toolchain's export data is too new for staticcheck
+          # 2025.1.1's x/tools. Pin to the same 1.24 the job already set up.
+          install-go: false
 
   # Code coverage, uploaded to Codecov.
   coverage:
