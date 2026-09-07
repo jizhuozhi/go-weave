@@ -56,3 +56,31 @@ jobs:
         run: go test -race ./...
       - name: GC stress
         run: GODEBUG=clobberfree=1 go test -count=1 ./...
+
+  # Static analysis beyond go vet: staticcheck catches real bugs vet misses.
+  staticcheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - uses: dominikh/staticcheck-action@v1
+        with:
+          version: "2024.1.1"
+
+  # Code coverage, uploaded to Codecov.
+  coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: test with coverage
+        run: go test -coverprofile=coverage.out ./...
+      - name: upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.out
