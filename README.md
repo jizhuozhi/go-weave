@@ -1,5 +1,8 @@
 # weave — runtime dynamic proxies for Go
 
+[![CI](https://github.com/jizhuozhi/go-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/jizhuozhi/go-weave/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/jizhuozhi/go-weave/branch/main/graph/badge.svg)](https://codecov.io/gh/jizhuozhi/go-weave)
+
 ```go
 import "github.com/jizhuozhi/go-weave" // package weave
 
@@ -64,6 +67,25 @@ annotation processing and codegen. A runnable version of this example is in
 [`examples/dao`](examples/dao); run it with `cd examples/dao && go run .`. The same shape
 gives you RPC stubs (interface = the wire contract), middleware for arbitrary
 business interfaces, and runtime mocks without gomock's generation step.
+
+## Mocks & spies
+
+The [`mockito`](mockito) subpackage layers a full Mockito-style mocking
+framework on top of the proxy — `Mock`, `Spy`, recording-style `When`, and
+`Verify`, with zero codegen:
+
+```go
+import "github.com/jizhuozhi/go-weave/mockito"
+
+m := mockito.Mock[Greeter]()
+mockito.When(m.Hello("ada")).ThenReturn("hi ada")
+m.Hello("ada")                       // "hi ada"
+mockito.Verify(m.Hello("ada")).Once()
+```
+
+It targets the things gomock does badly — spies (partial mocks), mocking
+third-party interfaces without their source, and deciding behavior at runtime.
+See [mockito/README.md](mockito/README.md) for the full API.
 
 ## How it works
 
@@ -259,3 +281,4 @@ darwin/arm64; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | `precise.go` | the stack-area shape a precise trampoline describes |
 | `examples/dao` | runnable declarative-DAO example |
 | `examples/spi` | SPI services with unified auth/trace advice (Spring-style) |
+| `mockito/` | Mockito-style mock/spy framework (`Mock`, `Spy`, `When`, `Verify`) |

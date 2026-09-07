@@ -210,8 +210,7 @@ func parseIns(s string) []byte {
 // already claims they are pointers, so a collection before the first safe point
 // would see a stale word through the new map. The stub is pure machine code
 // with no safe point until the CALL, so clearing them first is enough.
-func jitStubCode(sh stubShape, dispatch uintptr) []byte {
-	var code []byte
+func jitStubCode(sh stubShape, dispatch uintptr) (code []byte, pcsp []byte) {
 	emit := func(b ...[]byte) {
 		for _, s := range b {
 			code = append(code, s...)
@@ -219,9 +218,11 @@ func jitStubCode(sh stubShape, dispatch uintptr) []byte {
 	}
 
 	emit(asm("PUSH RBP"), asm("MOV RBP, RSP"), asm("SUB RSP, #%d", jitFrameSize)) // prologue
-	emit(asm("MOV [RSP], R11"))                                                   // a8, dispatch's 9th int arg
-	emit(asm("LEA RDX, [RSP+%d]", jitFrameSize+16))                               // &s0
-	emit(asm("MOV [RSP+8], RDX"))                                                 // stack param
+	// PUSH(1) + MOV(3) + SUB(7): SP moved by 8, then by jitSPDelta.
+	spMoved := len(code)
+	emit(asm("MOV [RSP], R11"))                     // a8, dispatch's 9th int arg
+	emit(asm("LEA RDX, [RSP+%d]", jitFrameSize+16)) // &s0
+	emit(asm("MOV [RSP+8], RDX"))                   // stack param
 
 	// Zero the pointer-holding result words before the first safe point.
 	for i := 0; i < sh.retWords; i++ {
@@ -250,5 +251,18 @@ func jitStubCode(sh stubShape, dispatch uintptr) []byte {
 	emit(asm("CALL R12"))
 
 	emit(asm("ADD RSP, #%d", jitFrameSize), asm("POP RBP"), asm("RET"))
-	return code
+	// Epilogue is ADD(7) + POP(1) + RET(1): SP drops back to 8 after the ADD
+	// and to 0 after the POP. Record those so an async preemption in either
+	// transition unwinds with the right spdelta.
+	sp8 := len(code) - 2
+	sp0 := len(code) - 1
+
+	pcsp = encodePCSP([]pcspEntry{
+		{pc: 1, spdelta: 0},
+		{pc: spMoved, spdelta: 8},
+		{pc: sp8, spdelta: int32(jitSPDelta)},
+		{pc: sp0, spdelta: 8},
+		{pc: len(code), spdelta: 0},
+	})
+	return code, pcsp
 }

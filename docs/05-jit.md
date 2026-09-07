@@ -71,7 +71,7 @@ put(asm("RET"))
 |---|---|---|
 | `pcHeader` | `magic=0xfffffff1`、`minLC=PCQuantum`、`ptrSize=8`、`nfunc=1` | `moduledataverify1` 校验 magic/minLC/ptrSize |
 | `funcnametab` | `"\0weave.jitstub\0"` | `Func.Name()` 读名字 |
-| `pctab` | `[0]` 哨兵 + `jitPCSPTable` | `pcvalue` 解码 pcsp |
+| `pctab` | `[0]` 哨兵 + `encodePCSP` 生成的 spdelta 区间表 | `pcvalue` 解码 pcsp |
 | `pclntable` | 一个 `_func`（含 pcdata/funcdata 两个尾数组） | `findfunc` 定位、`getStackMap` 读位图 |
 | `ftab` | 两行：`{0,0}` + 末尾哨兵 | `findfunc` 的桶查找收敛 |
 | `findfunctab` | 一个 bucket，`idx=0`、subbuckets 全 0 | `findfunc` 第 3、4 步 |

@@ -37,6 +37,12 @@ type Method struct {
 	codePtr unsafe.Pointer
 }
 
+// CodePtr returns the trampoline code pointer stored in itab.Fun[Index]. It is
+// a stable per-method identifier: the method value m.MethodName, read through
+// reflect.ValueOf(...).Pointer(), yields exactly this value, letting frameworks
+// such as mockito match invocations without string method names.
+func (m *Method) CodePtr() uintptr { return uintptr(m.codePtr) }
+
 // IsVariadic reports whether the method is variadic.
 func (m *Method) IsVariadic() bool { return m.Type.IsVariadic() }
 

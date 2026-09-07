@@ -1,0 +1,34 @@
+package mockito
+
+import (
+	"reflect"
+	"sync"
+
+	"github.com/jizhuozhi/go-weave/internal/gls"
+)
+
+type pendingCall struct {
+	state   *state
+	codePtr uintptr
+	args    []any
+}
+
+var (
+	glsMu sync.Mutex
+	lasts = map[uintptr]*pendingCall{}
+)
+
+func recordLast(s *state, codePtr uintptr, args []reflect.Value) {
+	glsMu.Lock()
+	lasts[gls.Key()] = &pendingCall{state: s, codePtr: codePtr, args: snapshot(args)}
+	glsMu.Unlock()
+}
+
+func popLast() *pendingCall {
+	k := gls.Key()
+	glsMu.Lock()
+	p := lasts[k]
+	delete(lasts, k)
+	glsMu.Unlock()
+	return p
+}
