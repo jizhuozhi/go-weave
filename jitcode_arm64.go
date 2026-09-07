@@ -119,9 +119,9 @@ func parseIns(s string) uint32 {
 // already claims they are pointers, so a collection before the first safe point
 // would see a stale word through the new map. The stub is pure machine code
 // with no safe point until BLR, so clearing them first is enough.
-func jitStubCode(sh stubShape, dispatch uintptr) []byte {
+func jitStubCode(sh stubShape, dispatch uintptr) (code []byte, pcsp []byte) {
 	off := 0
-	code := make([]byte, 512)
+	code = make([]byte, 512)
 	put := func(ins uint32) {
 		code[off] = byte(ins)
 		code[off+1] = byte(ins >> 8)
@@ -130,9 +130,11 @@ func jitStubCode(sh stubShape, dispatch uintptr) []byte {
 		off += 4
 	}
 
-	put(asm("SUB R20, SP, #%d", jitFrameSize))   // prologue: open the frame
-	put(asm("STP R29, R30, [R20, #-8]"))         // save FP and LR
-	put(asm("ADD SP, R20, #0"))                  // MOV SP, R20 (ADD #0: ORR's r31 is ZR, not SP)
+	put(asm("SUB R20, SP, #%d", jitFrameSize)) // prologue: open the frame
+	put(asm("STP R29, R30, [R20, #-8]"))       // save FP and LR
+	put(asm("ADD SP, R20, #0"))                // MOV SP, R20 (ADD #0: ORR's r31 is ZR, not SP)
+	// SP moves to R20 only here; the first three instructions leave SP put.
+	spMoved := off
 	put(asm("SUB R29, SP, #8"))                  // frame pointer
 	put(asm("STR R15, [SP, #8]"))                // a15, the 17th int arg
 	put(asm("ADD R16, SP, #%d", jitFrameSize+8)) // &s0
@@ -161,6 +163,15 @@ func jitStubCode(sh stubShape, dispatch uintptr) []byte {
 
 	put(asm("LDP R29, R30, [SP, #-8]")) // restore FP and LR
 	put(asm("ADD SP, SP, #%d", jitFrameSize))
+	// SP returns to entry here; the LDP above does not move SP.
+	spRestored := off
 	put(asm("RET"))
-	return code[:off]
+	code = code[:off]
+
+	pcsp = encodePCSP([]pcspEntry{
+		{pc: spMoved, spdelta: 0},
+		{pc: spRestored, spdelta: int32(jitSPDelta)},
+		{pc: len(code), spdelta: 0},
+	})
+	return code, pcsp
 }

@@ -43,7 +43,7 @@ func TestJITFindfunc(t *testing.T) {
 	}
 
 	jitMu.Lock()
-	md := buildJITModule(code[:16], 0, 0, 0, 0)
+	md := buildJITModule(code[:16], encodePCSP([]pcspEntry{{pc: 16, spdelta: 0}}), 0, 0, 0, 0)
 	registerModule(md)
 	jitRoots = append(jitRoots, md, code)
 	jitMu.Unlock()

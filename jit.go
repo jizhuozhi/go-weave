@@ -153,37 +153,51 @@ const (
 	fdLocalsPointerMaps = 1
 )
 
-// jitPCSPTable encodes the constant spdelta the trampoline's fixed-size frame
-// produces. pcvalue seeds val at -1 and zig-zag decodes each uvdelta, so the
-// single pair that reaches jitSPDelta is 2*(jitSPDelta+1), varint-encoded.
-// The pc-delta must advance past the whole function: pcvalue passes
-// `pc == f.entry()` as its "first" flag, and a zero pc-delta would keep that
-// true forever, making the zero end-of-table marker read as a real pair and
-// driving step off the end of the slice.
-func jitPCSPTable(codeLen int) []byte {
-	uv := uint32(jitSPDelta) + 1
-	uv *= 2
-	var tab []byte
-	for uv >= 0x80 {
-		tab = append(tab, byte(uv)|0x80)
-		uv >>= 7
-	}
-	tab = append(tab, byte(uv))
+// pcspEntry marks the spdelta the trampoline's frame has at a program counter.
+// The prologue and epilogue move SP part-way (PUSH before SUB, ADD before POP),
+// so the table records more than the body's constant jitSPDelta: an async
+// preemption in either transition must still unwind to the right frame.
+type pcspEntry struct {
+	pc      int   // byte offset from the function entry
+	spdelta int32 // sp - entry-sp at and after pc
+}
 
-	pd := uint32((codeLen + pcQuantum - 1) / pcQuantum)
-	for pd >= 0x80 {
-		tab = append(tab, byte(pd)|0x80)
-		pd >>= 7
+// encodePCSP builds a pcvalue table from spdelta change points. pcvalue seeds
+// val at -1 and zig-zag decodes each uvdelta, and the pc-delta must advance
+// past the whole function: pcvalue passes `pc == f.entry()` as its "first" flag,
+// and a zero pc-delta would keep that true forever, making the zero
+// end-of-table marker read as a real pair and driving step off the slice.
+func encodePCSP(entries []pcspEntry) []byte {
+	var tab []byte
+	val := int32(-1)
+	pc := 0
+	for _, e := range entries {
+		n := e.spdelta - val
+		uv := uint32(n<<1 ^ n>>31) // zig-zag
+		for uv >= 0x80 {
+			tab = append(tab, byte(uv)|0x80)
+			uv >>= 7
+		}
+		tab = append(tab, byte(uv))
+
+		pd := uint32(e.pc - pc)
+		for pd >= 0x80 {
+			tab = append(tab, byte(pd)|0x80)
+			pd >>= 7
+		}
+		tab = append(tab, byte(pd))
+		val = e.spdelta
+		pc = e.pc
 	}
-	tab = append(tab, byte(pd), 0) // pc-delta final byte, then end-of-table 0
+	tab = append(tab, 0) // end-of-table
 	return tab
 }
 
 // buildJITModule constructs a moduledata describing one generated trampoline.
-// code is the trampoline's machine code (text = &code[0]); the stack argument
-// area is argWords argument words followed by retWords result words, with
-// argPtrs/retPtrs marking which words hold pointers.
-func buildJITModule(code []byte, argWords, retWords int, argPtrs, retPtrs uint64) *jitModuledata {
+// code is the trampoline's machine code (text = &code[0]) and pcsp its spdelta
+// table; the stack argument area is argWords argument words followed by
+// retWords result words, with argPtrs/retPtrs marking which words hold pointers.
+func buildJITModule(code []byte, pcsp []byte, argWords, retWords int, argPtrs, retPtrs uint64) *jitModuledata {
 	text := uintptr(unsafe.Pointer(&code[0]))
 	etext := text + uintptr(len(code))
 
@@ -258,7 +272,7 @@ func buildJITModule(code []byte, argWords, retWords int, argPtrs, retPtrs uint64
 
 	// pctab holds just the pcsp table; offset 0 is a sentinel so pcsp's own
 	// offset is non-zero (pcvalue treats off==0 as "no table").
-	pctab := append([]byte{0}, jitPCSPTable(len(code))...)
+	pctab := append([]byte{0}, pcsp...)
 
 	// pclntable holds the _func.
 	pclntable := fnBytes
@@ -328,14 +342,14 @@ func jitTrampoline(sh stubShape) unsafe.Pointer {
 		return code
 	}
 
-	code := jitStubCode(sh, uintptr(reflect.ValueOf(Dispatch).Pointer()))
+	code, pcsp := jitStubCode(sh, uintptr(reflect.ValueOf(Dispatch).Pointer()))
 	mem, err := jitExecAlloc(code)
 	if err != nil {
 		return nil
 	}
 	base := uintptr(unsafe.Pointer(&mem[0]))
 
-	md := buildJITModule(mem, sh.argWords, sh.retWords, sh.argPtrs, sh.retPtrs)
+	md := buildJITModule(mem, pcsp, sh.argWords, sh.retWords, sh.argPtrs, sh.retPtrs)
 	registerModule(md)
 	jitRoots = append(jitRoots, mem, md)
 

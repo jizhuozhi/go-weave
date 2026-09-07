@@ -108,10 +108,12 @@ type _func struct {
 - `pcdelta` 是 **PC 增量**，单位是 `PCQuantum`：`pc += pcdelta * PCQuantum`；
 - 表以 `uvdelta == 0` 结束（`step` 函数在 `first` 标志为假时把 0 当结束标记）。
 
-这解释了 JIT 里 `jitPCSPTable` 的两个坑：
+这解释了 JIT 里 `encodePCSP`（生成 pcsp 表）的两个坑：
 
 1. **pcdelta 必须非零**：`pcvalue` 用 `pc == entry()` 当 "first" 标志，若 pcdelta 为 0，`first` 永远为真，结束标记 0 会被误读成一对数据，`step` 越界。所以表里要写一个覆盖整个函数的非零 pcdelta。
 2. **`pcsp` 字段不能是 0**：`pcvalue` 把 `off == 0` 当作"无表"返回 -1，而 `_func.pcsp == 0` 会让 `findfunc` 把它当外部函数处理。所以 JIT 的 pcsp 表存在 `pctab[1]`，`pctab[0]` 留作哨兵。
+
+还有一个更隐蔽的坑：**spdelta 不是常量**。桩的 prologue（`PUSH` 在 `SUB` 之前）和 epilogue（`ADD` 在 `POP` 之前）会让 SP 停在中间值。若 pcsp 表只写一个覆盖全函数的常量 `jitSPDelta`，异步抢占恰好落在 epilogue 的 `POP` 前，`funcspdelta` 返回错误值，`traceback` 就会 "did not unwind completely"。所以 `encodePCSP` 按真实区间编码：`0 → 8 → jitSPDelta → 8 → 0`（amd64），把 prologue/epilogue 的每个 SP 变化点都写进表。
 
 ## stackmap：指针位图
 
