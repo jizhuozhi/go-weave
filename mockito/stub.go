@@ -1,29 +1,30 @@
 package mockito
 
-// whenRecorded 把当前 goroutine 的最后一次调用回收成一条 stub。
+// whenRecorded turns the current goroutine's last call into a stub.
 func whenRecorded() *Stubber {
 	p := popLast()
 	if p == nil {
 		panic("mockito: When must wrap a mock method call")
 	}
-	p.state.rollback() // 触发调用不计入 Verify
+	p.state.rollback() // the trigger call must not count toward Verify
 	return &Stubber{s: p.state, codePtr: p.codePtr, args: p.args}
 }
 
-// When 开始一条记录式 stub：When(m.Hello("ada")) 里 m.Hello("ada") 是真实调用，
-// 参数受编译期类型检查，返回值数量由 When/When2/.../When4 区分——全程强类型。
+// When starts a recording-style stub: in When(m.Hello("ada")) the call
+// m.Hello("ada") is real, so its arguments are compile-time checked, and the
+// result count selects When / When2 / ... / When4 — fully type-safe.
 func When[T any](_ T) *Stubber { return whenRecorded() }
 
-// When2 用于返回两个值的方法（如 (T, error)）。
+// When2 is for methods returning two values (e.g. (T, error)).
 func When2[T, E any](_ T, _ E) *Stubber { return whenRecorded() }
 
-// When3 用于返回三个值的方法。
+// When3 is for methods returning three values.
 func When3[T1, T2, T3 any](_ T1, _ T2, _ T3) *Stubber { return whenRecorded() }
 
-// When4 用于返回四个值的方法。
+// When4 is for methods returning four values.
 func When4[T1, T2, T3, T4 any](_ T1, _ T2, _ T3, _ T4) *Stubber { return whenRecorded() }
 
-// Stubber 是 When 的链式调用结果。
+// Stubber is the chainable result of When.
 type Stubber struct {
 	s       *state
 	codePtr uintptr
@@ -35,13 +36,12 @@ func (sb *Stubber) add(st *stub) {
 	sb.s.addStub(sb.codePtr, st)
 }
 
-// ThenReturn 声明匹配调用的返回值。nil 会映射成对应返回类型的零值（如 nil error）。
-// 返回 error 也用它：ThenReturn(零值..., err)。
+// ThenReturn declares the return values for a matching call. nil maps to the
+// zero value of the corresponding result type (e.g. a nil error).
 func (sb *Stubber) ThenReturn(results ...any) { sb.add(&stub{rets: results}) }
 
-// ThenAnswer 用一个闭包按调用参数动态生成返回值。闭包收到参数（[]any），
-// 返回结果（[]any），nil 同样映射成对应返回类型的零值。
+// ThenAnswer computes results dynamically from the call arguments.
 func (sb *Stubber) ThenAnswer(f func([]any) []any) { sb.add(&stub{answer: f}) }
 
-// ThenPanic 让匹配调用 panic(v)。这是 Go 的"异常"；要返回 error 请用 ThenReturn。
+// ThenPanic makes a matching call panic(v) — Go's notion of "throwing".
 func (sb *Stubber) ThenPanic(v any) { sb.add(&stub{panics: true, panicV: v}) }

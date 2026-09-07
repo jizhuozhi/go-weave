@@ -2,14 +2,15 @@ package mockito
 
 import "fmt"
 
-// InOrder 验证调用的相对顺序。它维护一个游标，每次 Verify 从游标起找下一次
-// 匹配，并把游标推进到其后——从而断言"前一次 Verify 的调用发生在后一次之前"。
+// InOrder verifies the relative order of calls. It keeps a cursor; each Verify
+// finds the next match from the cursor and advances past it, asserting that the
+// previous Verify's call happened before the next.
 type InOrder struct {
 	s   *state
 	pos int
 }
 
-// NewInOrder 返回一个调用顺序验证器。首次 Verify 时通过记录式绑定到 mock。
+// NewInOrder returns a call-order verifier, bound to a mock on first Verify.
 func NewInOrder() *InOrder { return &InOrder{} }
 
 func (io *InOrder) Verify(_ any) *InOrderVerifier { return io.verify() }
@@ -35,14 +36,14 @@ func (io *InOrder) verify() *InOrderVerifier {
 	return &InOrderVerifier{io: io, codePtr: p.codePtr, args: p.args}
 }
 
-// InOrderVerifier 是 InOrder.Verify 的链式调用结果。
+// InOrderVerifier is the chainable result of InOrder.Verify.
 type InOrderVerifier struct {
 	io      *InOrder
 	codePtr uintptr
 	args    []any
 }
 
-// Times 断言从游标起恰好有 n 次匹配调用，并把游标推进到最后一次之后。
+// Times asserts exactly n matching calls from the cursor, then advances past them.
 func (iv *InOrderVerifier) Times(n int) {
 	io := iv.io
 	io.s.mu.Lock()
@@ -66,5 +67,5 @@ func (iv *InOrderVerifier) Times(n int) {
 	}
 }
 
-// Once 断言从游标起恰好一次匹配调用。
+// Once asserts exactly one matching call from the cursor.
 func (iv *InOrderVerifier) Once() { iv.Times(1) }

@@ -1,13 +1,14 @@
-// Package gls 提供 goroutine-local storage 的基础：当前 goroutine 的唯一标识。
-// 它只暴露 g 指针本身（不做任何结构体镜像），因此零版本分段，可被上层框架
-// 拿来做 goroutine-local 的 map key。
+// Package gls provides the foundation of goroutine-local storage: a unique
+// identifier for the current goroutine. It exposes only the g pointer itself
+// (no struct mirroring), so it is version-free; upper frameworks use it as a
+// goroutine-local map key.
 package gls
 
 import "unsafe"
 
-// getg 返回当前 goroutine 的 g 指针，见 getg_amd64.s / getg_arm64.s：
-// amd64 从 TLS 读，arm64 从 g 寄存器读。
+// getg returns the current goroutine's g pointer; see getg_amd64.s / getg_arm64.s.
 func getg() unsafe.Pointer
 
-// Key 返回当前 goroutine 的唯一标识（g 指针值），可用作 goroutine-local map 的 key。
+// Key returns a unique identifier for the current goroutine (the g pointer),
+// usable as a goroutine-local map key.
 func Key() uintptr { return uintptr(getg()) }

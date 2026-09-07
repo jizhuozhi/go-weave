@@ -1,7 +1,9 @@
-// Package mockito 是构建在 go-weave 运行时动态代理之上的 mock / spy 框架。
+// Package mockito is a Mockito-style mock / spy framework built on go-weave's
+// runtime dynamic proxies.
 //
-// 它回答 gomock 答不好的三件事：spy（部分 mock）、mock 第三方/无源码接口、
-// 以及运行时动态决定行为。mock 是 go-weave 的 nil-target 特例。
+// It targets three things gomock does badly: spies (partial mocks), mocking
+// third-party / source-less interfaces, and deciding behavior at runtime. A
+// mock is go-weave's nil-target special case.
 //
 //	m := mockito.Mock[Greeter]()
 //	mockito.When(m.Hello("ada")).ThenReturn("hi ada")
@@ -16,8 +18,8 @@ import (
 	weave "github.com/jizhuozhi/go-weave"
 )
 
-// state 是 mock 的内部状态：stub 规则 + 调用记录。stub 按方法 codePtr 索引
-// （c.Method.CodePtr()），而非方法名字符串——更稳、更快。
+// state is a mock's internal state: stub rules and the call log. Stubs are
+// keyed by a method's code pointer (c.Method.CodePtr()), not its name.
 type state struct {
 	mu    sync.Mutex
 	spy   bool
@@ -25,36 +27,37 @@ type state struct {
 	calls []Call
 }
 
-// stub 一条行为规则：当方法被某组参数调用时，返回指定结果。
+// stub is one behavior rule: when the method is called with a given argument
+// set, return a result.
 type stub struct {
-	args   []any // 期望参数，精确匹配
+	args   []any // expected arguments, matched exactly
 	rets   []any
-	answer func([]any) []any // ThenAnswer 闭包，按调用参数动态生成结果
-	panics bool              // ThenPanic：匹配时 panic(panicV)
+	answer func([]any) []any // ThenAnswer closure: results computed from the call args
+	panics bool              // ThenPanic: panic(panicV) on match
 	panicV any
 }
 
-// Call 记录一次方法调用。Method 供展示，CodePtr 供匹配。
+// Call records one method invocation. Method is for display, CodePtr for matching.
 type Call struct {
 	Method  string
 	CodePtr uintptr
 	Args    []any
 }
 
-// Mock 返回 T 的一个 mock：所有方法默认返回零值，并记录每次调用。
+// Mock returns a mock of T: every method returns zero values and records calls.
 func Mock[T any]() T {
 	s := &state{stubs: map[uintptr][]*stub{}}
 	var zero T
 	return weave.New[T](zero, s.intercept)
 }
 
-// Spy 返回 T 的一个 spy：方法默认走真实 target，除非被 stub 覆盖。
+// Spy returns a spy of T: methods run the real target unless overridden.
 func Spy[T any](target T) T {
 	s := &state{spy: true, stubs: map[uintptr][]*stub{}}
 	return weave.New[T](target, s.intercept)
 }
 
-// intercept 是核心拦截器：记录调用 → 匹配 stub → 回落到默认行为。
+// intercept is the core interceptor: record the call, match a stub, else fall back.
 func (s *state) intercept(c *weave.Invocation) []reflect.Value {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -80,7 +83,7 @@ func (s *state) intercept(c *weave.Invocation) []reflect.Value {
 	return zeroResults(c)
 }
 
-// findStub 从后往前找第一个匹配的 stub（后定义者优先，同 Mockito）。
+// findStub returns the last matching stub (later stubs win, like Mockito).
 func (s *state) findStub(codePtr uintptr, args []reflect.Value) *stub {
 	stubs := s.stubs[codePtr]
 	for i := len(stubs) - 1; i >= 0; i-- {
@@ -91,7 +94,8 @@ func (s *state) findStub(codePtr uintptr, args []reflect.Value) *stub {
 	return nil
 }
 
-// rollback 移除最后一次调用记录——它是记录式 stub/verify 的触发调用，不计入统计。
+// rollback removes the last recorded call — the recording-style trigger call,
+// which must not count toward verification.
 func (s *state) rollback() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -110,7 +114,8 @@ func (st *stub) match(args []reflect.Value) bool {
 	return argsMatch(st.args, snapshot(args))
 }
 
-// values 把 stub 结果转成 reflect.Value；nil 用对应返回类型的零值。
+// values converts stub results to reflect.Value; nil maps to the zero value of
+// the corresponding result type.
 func (st *stub) values(methodType reflect.Type, args []reflect.Value) []reflect.Value {
 	rets := st.rets
 	if st.answer != nil {
@@ -127,7 +132,7 @@ func (st *stub) values(methodType reflect.Type, args []reflect.Value) []reflect.
 	return out
 }
 
-// argsMatch 判断期望参数与实参是否精确匹配。
+// argsMatch reports whether expected arguments match actual arguments exactly.
 func argsMatch(want, got []any) bool {
 	if len(want) != len(got) {
 		return false
