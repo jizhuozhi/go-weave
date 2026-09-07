@@ -1,5 +1,8 @@
 # weave — runtime dynamic proxies for Go
 
+[![CI](https://github.com/jizhuozhi/go-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/jizhuozhi/go-weave/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/jizhuozhi/go-weave/branch/main/graph/badge.svg)](https://codecov.io/gh/jizhuozhi/go-weave)
+
 ```go
 import "github.com/jizhuozhi/go-weave" // package weave
 
