@@ -90,3 +90,20 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
+
+  # Documentation: Markdown style, link integrity, and EN/ZH parity.
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v24
+        with:
+          globs: |
+            README.md
+            docs/**/*.md
+            mockito/**/*.md
+
+      - name: check links & EN/ZH parity
+        run: python3 scripts/check-docs.py

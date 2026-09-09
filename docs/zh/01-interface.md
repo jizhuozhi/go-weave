@@ -40,7 +40,7 @@ type itab struct {
 
 编译器对接口调用 `x.M()` 生成的机器码（arm64 上大致为）：
 
-```
+```text
 MOVD 24(itab), R6   // 取 Fun[k] 的代码指针
 CALL (R6)           // 间接调用，不传递任何闭包上下文
 ```

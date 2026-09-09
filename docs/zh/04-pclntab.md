@@ -91,7 +91,7 @@ type _func struct {
 
 `_func` 结构体之后**紧跟着两个变长数组**：
 
-```
+```text
 [ _func 定长部分 ][ pcdata[npcdata] uint32 ][ funcdata[nfuncdata] uint32 ]
 ```
 
@@ -135,7 +135,7 @@ type stackmap struct {
 
 把这条链串起来，就是 GC 扫栈时对一个 JIT 帧做的事：
 
-```
+```text
 GC 扫栈 → gentraceback 遍历帧 → 对每帧 PC 调 findfunc
   → findmoduledatap 命中 JIT 模块 → findfuncbucket → ftab → _func
   → getStackMap 用 pcdata/funcdata 取 stackmap
