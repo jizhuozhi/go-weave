@@ -21,7 +21,7 @@ stack can **split** and can **move** — the two mechanisms below.
 Every function prologue has a stack check — comparing SP against
 `g.stackguard0`, jumping to `runtime.morestack` if SP crosses the guard:
 
-```
+```text
 function prologue (compiler-generated):
     CMP SP, stackguard
     BLO morestack        // stack is exhausted

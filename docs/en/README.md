@@ -66,7 +66,7 @@ Read in numbered order; each document depends only on the concepts before it:
 
 ## Concept map
 
-```
+```text
        01 Interface value (itab, data)
               │  Fun[k] must be a bare code pointer
               ▼

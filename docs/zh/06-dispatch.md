@@ -67,7 +67,7 @@ return m.targetFn.Call(c.Args())  // 或 CallSlice（variadic）
 
 ## 一条完整调用链
 
-```
+```text
 接口调用 x.M(args)
   → CALL (R6)                     // itab.Fun[k]，裸代码指针，参数已在寄存器/栈
   → 桩（jitcode 生成）             // shuffle：idx 进 R0，receiver 右移，&s0 进溢出位

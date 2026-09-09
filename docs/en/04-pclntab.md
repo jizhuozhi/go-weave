@@ -113,7 +113,7 @@ type _func struct {
 
 Immediately after the `_func` struct come **two variable-length arrays**:
 
-```
+```text
 [ _func fixed part ][ pcdata[npcdata] uint32 ][ funcdata[nfuncdata] uint32 ]
 ```
 
@@ -187,7 +187,7 @@ pointer value as `n`/`nbit`.
 Stringing the chain together is what the GC does to a JIT frame during a stack
 scan:
 
-```
+```text
 GC scans stack → gentraceback walks frames → findfunc for each frame's PC
   → findmoduledatap hits the JIT module → findfuncbucket → ftab → _func
   → getStackMap obtains the stackmap via pcdata/funcdata

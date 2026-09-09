@@ -56,7 +56,7 @@ method index (consistent with `reflect.Type.Method(i)`).
 The machine code the compiler emits for an interface call `x.M()` (roughly, on
 arm64):
 
-```
+```text
 MOVD 24(itab), R6   // load the code pointer of Fun[k]
 CALL (R6)           // indirect call, no closure context passed
 ```

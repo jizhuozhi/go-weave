@@ -14,7 +14,7 @@
 
 每个函数序言里有一条栈检查——把 SP 和 `g.stackguard0` 比较，SP 越过 guard 就跳到 `runtime.morestack`：
 
-```
+```text
 函数序言（编译器生成）:
     CMP SP, stackguard
     BLO morestack        // 栈不够了

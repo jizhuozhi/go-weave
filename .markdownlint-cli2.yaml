@@ -1,0 +1,18 @@
+config:
+  default: true
+  # Long lines are unavoidable in code blocks, tables, and CJK prose; the
+  # repository does not enforce an 80-column prose width.
+  MD013: false
+  # Inline HTML is not used, but keeping this relaxed avoids churn if a badge or
+  # a small snippet ever lands inline.
+  MD033: false
+  # Sections like "Limitations" and "How it works" recur across the whitepaper.
+  MD024: false
+  # Every document opens with a level-1 heading; this stays off so short
+  # fragments can be linted standalone without a forced H1.
+  MD041: false
+  # The repository uses the compact table separator style (|---|---|) throughout.
+  MD060: false
+
+globs:
+  - "**/*.md"

@@ -98,7 +98,7 @@ Once arguments are materialised into `[]reflect.Value`, the call goes through
 
 ## One complete call chain
 
-```
+```text
 interface call x.M(args)
   → CALL (R6)                     // itab.Fun[k], a bare code pointer; args already in registers/stack
   → trampoline (jitcode)          // shuffle: idx into R0, receiver shifted right, &s0 into a spill slot
