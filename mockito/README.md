@@ -77,6 +77,37 @@ mockito.When(m.Hello("ada")).ThenPanic("boom")
 mockito.When2(m.Greet("ada")).ThenReturn("", errors.New("boom"))
 ```
 
+`ThenReturn` is a **sequence**. For a single-result method, the values are
+returned one per call, and the last value repeats once exhausted — handy for
+"fail once, then succeed":
+
+```go
+mockito.When(m.Next()).ThenReturn(0, 1, 2) // 1st call 0, 2nd 1, 3rd 2, then 2 forever
+mockito.When2(m.Load("x")).ThenReturn("", errors.New("down")).ThenReturn("ok", nil)
+```
+
+For a multi-result method, each `ThenReturn` is one result group and chaining
+them forms the sequence (last group repeats).
+
+## Argument matchers
+
+Match arguments by rule instead of by exact value. The matcher runs inside the
+recording call, so its placeholder value is consumed there and the rule binds
+to that argument position:
+
+```go
+mockito.When(m.Hello(mockito.Any[string]())).ThenReturn("hi")     // any string
+mockito.When(m.Hello(mockito.Eq("ada"))).ThenReturn("hi ada")     // exactly "ada"
+mockito.When(m.Hello(mockito.Contains("ell"))).ThenReturn("match") // substring
+mockito.When(m.Greet(mockito.Match(func(s string) bool {
+    return len(s) > 3
+}), mockito.NotNil())).ThenReturn("long", nil)
+```
+
+Available matchers: `Any`, `Eq`, `NotNil`, `Match`, `Contains`, `HasPrefix`,
+`HasSuffix`. Like Mockito, once one argument uses a matcher, wrap the others in
+`Eq` to keep every position a matcher. Matchers work in `Verify` and
+`InOrder.Verify` too.
 
 ## Verification
 
@@ -91,6 +122,31 @@ n := mockito.Verify(m.Hello("ada")).Count()
 ```
 
 `Verify2` / `Verify3` / `Verify4` cover methods with 2–4 results.
+
+`Timeout` polls the call log for up to `d`, for calls made from other
+goroutines:
+
+```go
+mockito.Verify(m.Hello("ada")).Timeout(time.Second).Once()
+```
+
+`VerifyNoInteractions` and `VerifyNoMoreInteractions` catch stray calls:
+
+```go
+mockito.Verify(m.Hello("ada")).Once()
+mockito.VerifyNoMoreInteractions(m) // fails if any call was left unverified
+
+mockito.VerifyNoInteractions(other) // fails if other was called at all
+```
+
+By default a failed verification panics. Bind it to a `*testing.T` with `T`
+to report through `t.Errorf` instead — the test is marked failed but keeps
+running, so several verifications can be reported in one pass:
+
+```go
+mockito.Verify(m.Hello("ada")).T(t).Once()
+mockito.VerifyNoMoreInteractionsT(t, m)
+```
 
 ## Call order
 

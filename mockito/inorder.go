@@ -33,14 +33,15 @@ func (io *InOrder) verify() *InOrderVerifier {
 	if io.s == nil {
 		io.s = p.state
 	}
-	return &InOrderVerifier{io: io, codePtr: p.codePtr, args: p.args}
+	return &InOrderVerifier{io: io, codePtr: p.codePtr, args: p.args, matchers: p.matchers}
 }
 
 // InOrderVerifier is the chainable result of InOrder.Verify.
 type InOrderVerifier struct {
-	io      *InOrder
-	codePtr uintptr
-	args    []any
+	io       *InOrder
+	codePtr  uintptr
+	args     []any
+	matchers []Matcher
 }
 
 // Times asserts exactly n matching calls from the cursor, then advances past them.
@@ -51,7 +52,7 @@ func (iv *InOrderVerifier) Times(n int) {
 	count, last := 0, -1
 	for i := io.pos; i < len(io.s.calls); i++ {
 		c := io.s.calls[i]
-		if c.CodePtr == iv.codePtr && argsMatch(iv.args, c.Args) {
+		if c.CodePtr == iv.codePtr && argsMatch(iv.args, iv.matchers, c.Args) {
 			count++
 			last = i
 			if count == n {
