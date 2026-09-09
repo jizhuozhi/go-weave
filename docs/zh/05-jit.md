@@ -24,7 +24,7 @@ put(asm("SUB R29, SP, #8"))                // 设本帧的 frame pointer
 
 `asm` 是个轻量汇编器：`tokenize` 按分隔符切分，`parseReg`/`parseImm` 解析操作数，`parseIns` 按指令名分派到编码 helper（`subImm`/`strOff`/`movz`…）。每个 helper 只做位拼接，注释写清字段布局。它只认 `jitStubCode` 用到的指令子集，拼错的指令会在 `init` 预生成时 panic 暴露。
 
-前四条是标准的函数序言，和编译器生成的一样。关键是它**没有 `morestack` 检查**（`//go:nosplit` 语义），帧大小固定，所以 `pcsp` 能编码成一个常量。
+前四条是标准的函数序言，和编译器生成的一样。关键是它**没有 `morestack` 检查**（`//go:nosplit` 语义），帧大小固定，所以 `pcsp` 能按 prologue/epilogue 的 SP 变化区间精确编码（见 [04-pclntab.md](04-pclntab.md) 的 `encodePCSP`）。
 
 ```go
 put(asm("STR R15, [SP, #8]"))               // 第 16 个整数寄存器溢出到栈槽

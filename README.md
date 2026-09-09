@@ -89,6 +89,9 @@ See [mockito/README.md](mockito/README.md) for the full API.
 
 ## How it works
 
+The full technical story — why each piece has to be the way it is — is in the
+[whitepaper](docs/) (English & Chinese). What follows is the short version.
+
 ### The itab forgery
 
 A Go interface value is `iface{tab *itab, data unsafe.Pointer}`, and the

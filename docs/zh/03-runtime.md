@@ -21,7 +21,7 @@
     ... 正常执行
 ```
 
-`morestack` 保存现场后进入 `runtime.newstack`，后者分配更大的栈并触发 `copystack`。本库的 JIT 桩是纯机器码，**没有这条检查**（等价于编译期 `//go:nosplit`），帧大小固定，因此 `funcspdelta` 报告常量，traceback 才能正确 unwind——这在本库 [04-pclntab.md](04-pclntab.md) 的 pcvalue 部分有对应。
+`morestack` 保存现场后进入 `runtime.newstack`，后者分配更大的栈并触发 `copystack`。本库的 JIT 桩是纯机器码，**没有这条检查**（等价于编译期 `//go:nosplit`），帧大小固定，因此 `pcsp` 表能精确描述每一处 PC 的栈指针偏移，traceback 才能正确 unwind——这在本库 [04-pclntab.md](04-pclntab.md) 的 pcvalue 部分有对应。
 
 ## 栈移动：copystack 如何调整指针
 
