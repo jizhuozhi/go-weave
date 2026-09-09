@@ -3,6 +3,7 @@ package mockito
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -340,4 +341,154 @@ func TestVerifyWithMatcher(t *testing.T) {
 	m.Hello("bob")
 
 	Verify(m.Hello(Any[string]())).Times(2)
+}
+
+type ptrSvc interface {
+	Do(p *string) string
+}
+
+func TestStubNotNilMatcher(t *testing.T) {
+	m := Mock[ptrSvc]()
+	When(m.Do(NotNil[*string]())).ThenReturn("ok")
+
+	s := "x"
+	if got := m.Do(&s); got != "ok" {
+		t.Fatalf("got %q, want ok", got)
+	}
+	if got := m.Do(nil); got != "" {
+		t.Fatalf("nil arg got %q, want zero", got)
+	}
+}
+
+func TestStubHasPrefixMatcher(t *testing.T) {
+	m := Mock[Greeter]()
+	When(m.Hello(HasPrefix("he"))).ThenReturn("prefix")
+
+	if got := m.Hello("hello"); got != "prefix" {
+		t.Fatalf("got %q, want prefix", got)
+	}
+	if got := m.Hello("world"); got != "" {
+		t.Fatalf("got %q, want zero", got)
+	}
+}
+
+func TestStubHasSuffixMatcher(t *testing.T) {
+	m := Mock[Greeter]()
+	When(m.Hello(HasSuffix("lo"))).ThenReturn("suffix")
+
+	if got := m.Hello("hello"); got != "suffix" {
+		t.Fatalf("got %q, want suffix", got)
+	}
+	if got := m.Hello("world"); got != "" {
+		t.Fatalf("got %q, want zero", got)
+	}
+}
+
+func TestVerifyNoInteractionsT(t *testing.T) {
+	m := Mock[Greeter]()
+	tb := &fakeTB{}
+	VerifyNoInteractionsT(tb, m)
+	if len(tb.errs) != 0 {
+		t.Fatalf("got %d errors, want 0: %v", len(tb.errs), tb.errs)
+	}
+}
+
+func TestVerifyNoMoreInteractionsT(t *testing.T) {
+	m := Mock[Greeter]()
+	m.Hello("ada")
+	Verify(m.Hello("ada")).Once()
+
+	tb := &fakeTB{}
+	VerifyNoMoreInteractionsT(tb, m)
+	if len(tb.errs) != 0 {
+		t.Fatalf("got %d errors, want 0: %v", len(tb.errs), tb.errs)
+	}
+}
+
+func TestInOrderMultiReturn(t *testing.T) {
+	m := Mock[Greeter]()
+	m.Greet("ada")
+	m.Triple("ada")
+	m.Quad("ada")
+
+	io := NewInOrder()
+	io.Verify2(m.Greet("ada")).Once()
+	io.Verify3(m.Triple("ada")).Once()
+	io.Verify4(m.Quad("ada")).Once()
+}
+
+func TestVerifyTimeoutExpires(t *testing.T) {
+	m := Mock[Greeter]()
+	// Never called, so the timed verification must time out and report.
+	tb := &fakeTB{}
+	Verify(m.Hello("ada")).T(tb).Timeout(20 * time.Millisecond).Once()
+
+	if len(tb.errs) != 1 {
+		t.Fatalf("got %d errors, want 1: %v", len(tb.errs), tb.errs)
+	}
+}
+
+type intSvc interface {
+	Add(a int) int
+}
+
+func TestNotNilNonNilable(t *testing.T) {
+	m := Mock[intSvc]()
+	When(m.Add(NotNil[int]())).ThenReturn(1)
+	if got := m.Add(5); got != 1 {
+		t.Fatalf("got %d, want 1", got)
+	}
+}
+
+func mustPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	fn()
+}
+
+func TestVerifyNoInteractionsFails(t *testing.T) {
+	m := Mock[Greeter]()
+	m.Hello("ada")
+	mustPanic(t, func() { VerifyNoInteractions(m) })
+}
+
+func TestStateOfNotMock(t *testing.T) {
+	mustPanic(t, func() { VerifyNoInteractions("not a mock") })
+}
+
+func TestMatcherString(t *testing.T) {
+	cases := []struct {
+		m    Matcher
+		want string
+	}{
+		{anyMatcher{}, "any"},
+		{eqMatcher{v: "ada"}, "eq(ada)"},
+		{notNilMatcher{}, "not nil"},
+		{predMatcher{name: "match"}, "match"},
+		{stringMatcher{name: "contains"}, "contains"},
+	}
+	for _, c := range cases {
+		if got := c.m.String(); got != c.want {
+			t.Fatalf("String() = %q, want %q", got, c.want)
+		}
+	}
+}
+
+func TestVerifyMatcherDescribe(t *testing.T) {
+	m := Mock[Greeter]()
+	m.Hello("ada")
+
+	tb := &fakeTB{}
+	Verify(m.Hello(Any[string]())).T(tb).Times(2) // fails, message uses the matcher
+
+	if len(tb.errs) != 1 {
+		t.Fatalf("got %d errors, want 1", len(tb.errs))
+	}
+	if !strings.Contains(tb.errs[0], "Hello(any)") {
+		t.Fatalf("error %q should render the matcher", tb.errs[0])
+	}
 }

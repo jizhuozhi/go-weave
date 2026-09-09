@@ -85,8 +85,21 @@ func (m eqMatcher) String() string     { return fmt.Sprintf("eq(%v)", m.v) }
 
 type notNilMatcher struct{}
 
-func (notNilMatcher) Matches(x any) bool { return x != nil }
-func (notNilMatcher) String() string     { return "not nil" }
+func (notNilMatcher) Matches(x any) bool {
+	// x != nil is not enough: a nil pointer boxed into an interface is a
+	// non-nil interface value. Reflect through to the underlying nilness.
+	if x == nil {
+		return false
+	}
+	v := reflect.ValueOf(x)
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
+		return !v.IsNil()
+	default:
+		return true
+	}
+}
+func (notNilMatcher) String() string { return "not nil" }
 
 type predMatcher struct {
 	name string

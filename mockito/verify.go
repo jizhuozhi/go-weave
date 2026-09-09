@@ -2,6 +2,7 @@ package mockito
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,7 +29,7 @@ func verifyRecorded() *Verifier {
 		panic("mockito: Verify must wrap a mock method call")
 	}
 	p.state.rollback() // the trigger call must not count toward verification
-	return &Verifier{s: p.state, codePtr: p.codePtr, args: p.args, matchers: p.matchers}
+	return &Verifier{s: p.state, codePtr: p.codePtr, method: p.method, args: p.args, matchers: p.matchers}
 }
 
 // Verify starts a recording-style verification: in Verify(m.Hello("ada")) the
@@ -49,10 +50,25 @@ func Verify4[T1, T2, T3, T4 any](_ T1, _ T2, _ T3, _ T4) *Verifier { return veri
 type Verifier struct {
 	s        *state
 	codePtr  uintptr
+	method   string
 	args     []any
 	matchers []Matcher
 	timeout  time.Duration
 	t        testing.TB
+}
+
+// describe renders the expected call for a failure message, using a matcher's
+// String() where one is bound.
+func (v *Verifier) describe() string {
+	parts := make([]string, len(v.args))
+	for i, a := range v.args {
+		if i < len(v.matchers) && v.matchers[i] != nil {
+			parts[i] = v.matchers[i].String()
+		} else {
+			parts[i] = fmt.Sprintf("%v", a)
+		}
+	}
+	return fmt.Sprintf("%s(%s)", v.method, strings.Join(parts, ", "))
 }
 
 // T binds the verifier to a testing.TB, so a failed assertion is reported via
@@ -124,28 +140,28 @@ func (v *Verifier) wait(check func(got int) (bool, string)) bool {
 // Times asserts exactly n matching calls.
 func (v *Verifier) Times(n int) {
 	v.assert(func(got int) (bool, string) {
-		return got == n, fmt.Sprintf("%d calls, want %d", got, n)
+		return got == n, fmt.Sprintf("%s: %d calls, want %d", v.describe(), got, n)
 	})
 }
 
 // AtLeast asserts at least n matching calls.
 func (v *Verifier) AtLeast(n int) {
 	v.assert(func(got int) (bool, string) {
-		return got >= n, fmt.Sprintf("%d calls, want at least %d", got, n)
+		return got >= n, fmt.Sprintf("%s: %d calls, want at least %d", v.describe(), got, n)
 	})
 }
 
 // AtMost asserts at most n matching calls.
 func (v *Verifier) AtMost(n int) {
 	v.assert(func(got int) (bool, string) {
-		return got <= n, fmt.Sprintf("%d calls, want at most %d", got, n)
+		return got <= n, fmt.Sprintf("%s: %d calls, want at most %d", v.describe(), got, n)
 	})
 }
 
 // Between asserts the matching call count falls in [a, b].
 func (v *Verifier) Between(a, b int) {
 	v.assert(func(got int) (bool, string) {
-		return got >= a && got <= b, fmt.Sprintf("%d calls, want between %d and %d", got, a, b)
+		return got >= a && got <= b, fmt.Sprintf("%s: %d calls, want between %d and %d", v.describe(), got, a, b)
 	})
 }
 

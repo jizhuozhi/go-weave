@@ -110,7 +110,7 @@ func (s *state) intercept(c *weave.Invocation) []reflect.Value {
 		Args:    snapshot(args),
 	})
 	s.verified = append(s.verified, false)
-	recordLast(s, codePtr, args, c.Method.NumOut(), ms)
+	recordLast(s, codePtr, c.Method.Name, args, c.Method.NumOut(), ms)
 
 	if st := s.findStub(codePtr, args); st != nil {
 		if st.panics {
