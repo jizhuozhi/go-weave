@@ -8,9 +8,12 @@ import (
 )
 
 type pendingCall struct {
-	state   *state
-	codePtr uintptr
-	args    []any
+	state    *state
+	codePtr  uintptr
+	method   string // method name, for failure messages
+	args     []any
+	numOut   int       // number of results the method returns
+	matchers []Matcher // per-argument matchers, nil entry = exact match
 }
 
 var (
@@ -18,9 +21,9 @@ var (
 	lasts = map[uintptr]*pendingCall{}
 )
 
-func recordLast(s *state, codePtr uintptr, args []reflect.Value) {
+func recordLast(s *state, codePtr uintptr, method string, args []reflect.Value, numOut int, matchers []Matcher) {
 	glsMu.Lock()
-	lasts[gls.Key()] = &pendingCall{state: s, codePtr: codePtr, args: snapshot(args)}
+	lasts[gls.Key()] = &pendingCall{state: s, codePtr: codePtr, method: method, args: snapshot(args), numOut: numOut, matchers: matchers}
 	glsMu.Unlock()
 }
 

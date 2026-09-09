@@ -10,7 +10,11 @@ coverage:
         threshold: 1%
     patch:
       default:
-        target: auto
+        # New lines must be mostly covered, but defensive panic branches and
+        # fixed-arity paths (e.g. "must wrap a mock call", len mismatch) are
+        # not worth forcing to 100%.
+        target: 90%
+        threshold: 5%
 
 comment:
   layout: "reach, diff, flags, files"
