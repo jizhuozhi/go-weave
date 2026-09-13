@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="404" viewBox="0 0 960 404" role="img" aria-label="go-weave call overhead: direct call 0.25 ns, proxy with no interceptor 47 ns, proxy observing 48 ns, proxy rewriting args 273 ns">
+  <rect width="960" height="404" fill="#ffffff"/>
+
+  <text x="40" y="54" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="23" font-weight="700" fill="#0f172a">go-weave call overhead</text>
+  <text x="40" y="80" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#64748b">Apple M1 &#183; Go 1.23 &#183; arm64 &#183; lower is better</text>
+
+  <!-- column headers -->
+  <text x="920" y="108" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#94a3b8" letter-spacing="0.5">ALLOCS</text>
+
+  <!-- row 1: direct call -->
+  <text x="40" y="146" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#334155">direct call</text>
+  <rect x="250" y="120" width="470" height="36" rx="4" fill="#f1f5f9"/>
+  <rect x="250" y="120" width="4" height="36" rx="2" fill="#94a3b8"/>
+  <text x="264" y="144" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#475569">0.25 ns</text>
+  <text x="920" y="144" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#94a3b8">0</text>
+
+  <!-- row 2: proxy, no interceptor -->
+  <text x="40" y="210" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0f172a">proxy, no interceptor</text>
+  <rect x="250" y="184" width="470" height="36" rx="4" fill="#eff6ff"/>
+  <rect x="250" y="184" width="81" height="36" rx="4" fill="#2563eb"/>
+  <text x="343" y="208" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1d4ed8">47 ns</text>
+  <text x="920" y="208" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#94a3b8">0</text>
+
+  <!-- row 3: proxy, observing -->
+  <text x="40" y="274" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#334155">proxy, observing</text>
+  <rect x="250" y="248" width="470" height="36" rx="4" fill="#eff6ff"/>
+  <rect x="250" y="248" width="83" height="36" rx="4" fill="#60a5fa"/>
+  <text x="345" y="272" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1d4ed8">48 ns</text>
+  <text x="920" y="272" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#94a3b8">0</text>
+
+  <!-- row 4: proxy, rewriting args -->
+  <text x="40" y="338" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#334155">proxy, rewriting args</text>
+  <rect x="250" y="312" width="470" height="36" rx="4" fill="#fffbeb"/>
+  <rect x="250" y="312" width="470" height="36" rx="4" fill="#f59e0b"/>
+  <text x="732" y="336" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#b45309">273 ns</text>
+  <text x="920" y="336" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#94a3b8">6</text>
+
+  <text x="40" y="386" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#94a3b8">Arguments are materialised lazily &#8212; an interceptor that never calls Args() pays nothing, which is why observing costs the same as not intercepting.</text>
+</svg>
