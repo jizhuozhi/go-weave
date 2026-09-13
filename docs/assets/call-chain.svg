@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" role="img" aria-label="Call path: x.M() to trampoline to dispatch to interceptor chain to target, with the redial fast path and GC safety notes.">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="430" fill="#ffffff"/>
+
+  <text x="40" y="48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0f172a">One proxied call, end to end</text>
+  <text x="40" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#64748b">The call site is a plain indirect itab call. Everything below is set up once, at proxy construction.</text>
+
+  <!-- box 1 -->
+  <rect x="45" y="110" width="150" height="64" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="120" y="139" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0f172a">x.M()</text>
+  <text x="120" y="159" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#94a3b8">caller</text>
+
+  <!-- box 2 -->
+  <rect x="225" y="110" width="150" height="64" rx="6" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
+  <text x="300" y="139" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#b45309">trampoline[k]</text>
+  <text x="300" y="159" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#d97706">JIT machine code</text>
+
+  <!-- box 3 -->
+  <rect x="405" y="110" width="150" height="64" rx="6" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="480" y="139" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#1d4ed8">dispatch</text>
+  <text x="480" y="159" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#60a5fa">Go code</text>
+
+  <!-- box 4 -->
+  <rect x="585" y="110" width="150" height="64" rx="6" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="660" y="139" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#6d28d9">interceptors</text>
+  <text x="660" y="159" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#a78bfa">around advice</text>
+
+  <!-- box 5 -->
+  <rect x="765" y="110" width="150" height="64" rx="6" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="840" y="139" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#047857">target</text>
+  <text x="840" y="159" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#34d399">the real method</text>
+
+  <!-- arrows -->
+  <line x1="197" y1="142" x2="219" y2="142" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a2)"/>
+  <line x1="377" y1="142" x2="399" y2="142" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a2)"/>
+  <line x1="557" y1="142" x2="579" y2="142" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a2)"/>
+  <line x1="737" y1="142" x2="759" y2="142" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <!-- per-stage notes -->
+  <text x="120" y="196" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#64748b">CALL itab.Fun[k]</text>
+  <text x="300" y="196" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#64748b">register shuffle</text>
+  <text x="480" y="196" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#64748b">args decoded lazily</text>
+  <text x="660" y="196" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#64748b">c.Proceed()</text>
+  <text x="840" y="196" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#64748b">redial, no reflect</text>
+
+  <!-- fast path band -->
+  <rect x="45" y="228" width="870" height="72" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="66" y="254" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#1d4ed8">FAST PATH</text>
+  <text x="66" y="276" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#334155">When no interceptor touches the arguments, redial reloads the original registers, rebinds the receiver</text>
+  <text x="66" y="293" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#334155">to the target and calls its method code directly. Results land in the result registers by the ABI itself.</text>
+
+  <!-- gc band -->
+  <rect x="45" y="316" width="870" height="72" rx="6" fill="#fef2f2" stroke="#fecaca" stroke-width="1"/>
+  <text x="66" y="342" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#b91c1c">GC SAFETY</text>
+  <text x="66" y="364" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#334155">The trampoline's integer parameters carry raw registers, most of them garbage. They stay uintptr (never</text>
+  <text x="66" y="381" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#334155">scanned); dispatch copies the pointer-holding ones into a scanned mirror before the first allocation.</text>
+
+  <text x="45" y="414" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#94a3b8">47 ns / 0 allocs with no interceptor &#183; 48 ns observing &#183; -race clean on amd64 and arm64</text>
+</svg>

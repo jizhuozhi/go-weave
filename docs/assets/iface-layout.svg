@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="510" viewBox="0 0 940 510" role="img" aria-label="A Go interface value is two words: a pointer to an itab and a data pointer. The itab holds Inter, Type, Hash and the Fun array of code pointers.">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="940" height="510" fill="#ffffff"/>
+
+  <text x="40" y="48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0f172a">A Go interface value is two words</text>
+  <text x="40" y="74" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#64748b">The compiler lowers x.M() to an indirect call through the method table.</text>
+
+  <!-- interface value -->
+  <rect x="40" y="104" width="460" height="60" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="270" y1="104" x2="270" y2="164" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="60" y="131" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0f172a">tab</text>
+  <text x="60" y="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#64748b">*itab</text>
+  <text x="292" y="131" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0f172a">data</text>
+  <text x="292" y="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#64748b">unsafe.Pointer</text>
+  <text x="500" y="98" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="0.5">IFACE</text>
+
+  <line x1="155" y1="164" x2="155" y2="200" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- itab -->
+  <rect x="40" y="206" width="460" height="212" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="500" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="0.5">ITAB</text>
+
+  <text x="60" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0f172a">Inter</text>
+  <text x="150" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#64748b">*interfacetype</text>
+  <text x="60" y="264" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0f172a">Type</text>
+  <text x="150" y="264" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#64748b">*_type</text>
+  <text x="60" y="290" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0f172a">Hash</text>
+  <text x="150" y="290" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#64748b">uint32</text>
+
+  <line x1="56" y1="306" x2="484" y2="306" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="60" y="322" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="0.5">CODE POINTERS, ONE PER METHOD</text>
+
+  <text x="60" y="350" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" fill="#334155">Fun[0]</text>
+  <text x="60" y="376" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" fill="#334155">Fun[1]</text>
+  <rect x="48" y="386" width="120" height="24" rx="4" fill="#dbeafe"/>
+  <text x="60" y="402" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#1d4ed8">Fun[k]</text>
+
+  <!-- arrows from Fun rows to trampolines -->
+  <line x1="500" y1="345" x2="634" y2="345" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="500" y1="371" x2="634" y2="371" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="500" y1="398" x2="634" y2="398" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- trampolines -->
+  <text x="640" y="288" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="0.5">GENERATED AT RUNTIME</text>
+  <rect x="640" y="332" width="260" height="26" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="654" y="350" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#475569">trampoline[0]</text>
+  <rect x="640" y="358" width="260" height="26" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="654" y="376" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#475569">trampoline[1]</text>
+  <rect x="640" y="384" width="260" height="26" rx="4" fill="#dbeafe" stroke="#60a5fa"/>
+  <text x="654" y="402" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1d4ed8">trampoline[k]</text>
+
+  <!-- the call -->
+  <rect x="40" y="440" width="860" height="46" rx="6" fill="#0f172a"/>
+  <text x="60" y="468" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" fill="#e2e8f0">x.M()  &#8594;  MOVD 24(itab), R6   ;   CALL (R6)</text>
+  <text x="620" y="468" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#94a3b8">no closure context, no runtime magic</text>
+</svg>

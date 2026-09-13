@@ -2,6 +2,11 @@
 
 [![CI](https://github.com/jizhuozhi/go-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/jizhuozhi/go-weave/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/jizhuozhi/go-weave/branch/main/graph/badge.svg)](https://codecov.io/gh/jizhuozhi/go-weave)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jizhuozhi/go-weave)](https://goreportcard.com/report/github.com/jizhuozhi/go-weave)
+
+**Go's answer to `java.lang.reflect.Proxy`** — intercept, rewrite and mock any
+interface at runtime. Forged itabs, runtime JIT, zero codegen. 47 ns / 0 allocs
+per call.
 
 ```go
 import "github.com/jizhuozhi/go-weave" // package weave
@@ -28,6 +33,17 @@ step. The runtime layouts the package forges are validated at init against a
 real itab, so an unsupported future Go fails at startup with a clear panic
 instead of corrupting memory.
 
+## Why this is supposed to be impossible
+
+Go has no class loader, no bytecode and no VM. The compiler lowers `x.M()` to a
+plain indirect call `CALL itab.Fun[k]`, and the runtime only builds itabs for
+types that statically implement the interface — so this package simply
+allocates one itself, points `Fun[k]` at trampolines generated at runtime, and
+forges a `moduledata` so the collector can scan the generated code's frames.
+
+The full story — three walls, and how each came down — is in the
+[whitepaper](docs/) (English & Chinese, six chapters ordered by dependency).
+
 ## What you get
 
 | Feature | Notes |
@@ -39,6 +55,16 @@ instead of corrupting memory.
 | Mocking | `weave.New[T](nil)` returns zero values for every method |
 | Declarative APIs | interface as the only declaration, interceptor as the implementation |
 | Reflection-free hot path | 47 ns / 0 allocs per call, `-race` supported |
+
+## Examples
+
+Three runnable programs, each a different shape of the same idea:
+
+| Example | What it shows | Run |
+| --- | --- | --- |
+| [`examples/dao`](examples/dao) | MyBatis-style declarative DAO — the interface *is* the data access layer; XML mapping, no impl struct, no codegen | `cd examples/dao && go run .` |
+| [`examples/spi`](examples/spi) | Spring-style SPI container — service discovery plus unified auth/trace advice over every registered service | `go run ./examples/spi` |
+| [`examples/rpc`](examples/rpc) | RPC stub — the interface is the wire contract, the interceptor does the serialization | `cd examples/rpc && go run .` |
 
 ## Declarative DAOs
 
@@ -92,6 +118,8 @@ See [mockito/README.md](mockito/README.md) for the full API.
 The full technical story — why each piece has to be the way it is — is in the
 [whitepaper](docs/) (English & Chinese). What follows is the short version.
 
+![one proxied call, end to end](docs/assets/call-chain.svg)
+
 ### The itab forgery
 
 A Go interface value is `iface{tab *itab, data unsafe.Pointer}`, and the
@@ -101,6 +129,8 @@ package simply allocates one itself: `Inter` points at the real interface type,
 `Type` at `*Proxy`, and each `Fun[k]` at a trampoline for that method. The
 resulting value is a first-class `T` end to end; it can be stored, passed and
 called like any other `T`.
+
+![interface value and itab layout](docs/assets/iface-layout.svg)
 
 ### The trampolines
 
@@ -174,6 +204,8 @@ ProxyAdd (no interceptor)           47 ns           0
 ProxyIntercept (observing)          48 ns           0
 ProxyInspect (rewrites args)       273 ns           6
 ```
+
+![call overhead](docs/assets/benchmark.svg)
 
 ### GC safety
 

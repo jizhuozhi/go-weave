@@ -1,9 +1,18 @@
 package main
 
-// SPI + 极简 Spring：接口是 SPI 契约，实现是服务提供者，Register 扮演
-// ServiceLoader 的"发现 + 加载"，同时把统一切面（鉴权 → 遥测）织进去——
-// 合起来就是 Spring 的 IoC + AOP 的最小形态，只是没有注解、XML、codegen。
-// 运行：go run ./examples/spi
+// One interceptor chain, applied uniformly to any interface.
+//
+// This is the SPI shape — the interface is the contract, an implementation is
+// plugged in — except that the cross-cutting concerns come from the proxy
+// rather than from a hand-written decorator. Two unrelated interfaces (Storage,
+// Greeter) get the same behaviour, and neither implementation contains a line
+// of auth or logging code.
+//
+// Register is also the reference for the generic-wrapper pattern: T is an
+// unconstrained type parameter here, so nil cannot be passed to weave.New[T] —
+// it has to go through NewOf/As.
+//
+// Run: go run ./examples/spi
 
 import (
 	"context"
@@ -13,7 +22,7 @@ import (
 	"github.com/jizhuozhi/go-weave"
 )
 
-// ===== SPI 契约：调用方只依赖接口，不依赖实现 =====
+// The contracts. Callers depend on these and never on an implementation.
 
 type Storage interface {
 	Get(ctx context.Context, key string) (string, error)
@@ -24,7 +33,8 @@ type Greeter interface {
 	Hello(ctx context.Context, name string) string
 }
 
-// ===== 服务提供者：各自的实现，框架与调用方都不认识 =====
+// The providers. Each has its own implementation, unknown to the framework and
+// to callers.
 
 type memoryStorage struct{ m map[string]string }
 
@@ -47,22 +57,22 @@ func (englishGreeter) Hello(_ context.Context, name string) string {
 	return "hello, " + name
 }
 
-// ctxKey 用自定义类型做 context key，避免裸 string key 跨包冲突（SA1029）。
+// ctxKey is a defined type used as a context key, so a bare string key cannot
+// collide across packages (SA1029).
 type ctxKey string
 
 const callerKey ctxKey = "caller"
 
-// ===== 容器：注册即代理（ServiceLoader + Spring AOP）=====
-
-// Register 把实现加载成 SPI 服务，返回被统一切面增强的接口代理。一个函数
-// 干了三件事：服务发现（ServiceLoader.load）、bean 注册（@Service）、自动
-// 代理（Spring AOP）。框架完全不知道 T 有哪些方法。
+// Register wraps an implementation in the shared chain and hands it back as the
+// interface. The framework never learns which methods T has.
 func Register[T any](impl T) T {
 	iface := reflect.TypeOf((*T)(nil)).Elem()
 	proxy := weave.NewOf(iface, impl, auth, trace)
 	return weave.As[T](proxy)
 }
 
+// auth short-circuits: with no caller in the context the method is never
+// reached, and the interceptor supplies the zero results itself.
 func auth(c *weave.Invocation) []reflect.Value {
 	ctx := c.Arg(0).Interface().(context.Context)
 	caller, _ := ctx.Value(callerKey).(string)
@@ -74,6 +84,7 @@ func auth(c *weave.Invocation) []reflect.Value {
 	return c.Proceed()
 }
 
+// trace is around advice: it resumes after the rest of the chain has returned.
 func trace(c *weave.Invocation) []reflect.Value {
 	res := c.Proceed()
 	fmt.Printf("trace: %s done\n", c.Method.Name)
@@ -89,7 +100,7 @@ func zeroResults(c *weave.Invocation) []reflect.Value {
 }
 
 func main() {
-	// 服务提供者各自注册；调用方拿到的只是 SPI 接口，不关心实现。
+	// Each provider registers itself; callers only ever see the interface.
 	storage := Register[Storage](&memoryStorage{m: map[string]string{"name": "ada"}})
 	greeter := Register[Greeter](englishGreeter{})
 
@@ -100,5 +111,6 @@ func main() {
 
 	fmt.Println(greeter.Hello(ctx, "bob"))
 
+	// No caller in the context: auth denies, so Put never runs.
 	_ = storage.Put(context.Background(), "hack", "x")
 }

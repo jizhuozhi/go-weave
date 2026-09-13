@@ -1,11 +1,15 @@
 package main
 
-// 声明式 DAO：接口即数据访问层，无实现结构体、无 codegen。
+// A declarative DAO: the interface *is* the data access layer — no
+// implementation struct, no codegen.
 //
-// 分两阶段：先 compileMapper 把 userdao.xml 预编译成执行计划，再用
-// weave.New 安装 interceptor。执行时只查内存里的计划，不碰文件——改 SQL 后
-// 显式调用 reload() 才热生效。方法名、WHERE/LIMIT、返回类型全部来自 XML 和
-// 接口签名，没有一处硬编码。运行：
+// Two phases. First compileMapper pre-compiles userdao.xml into execution
+// plans, then weave.New installs the interceptor. Execution reads only the
+// in-memory plans and never touches the file — call reload() explicitly to pick
+// up edited SQL. Method names, WHERE/LIMIT binding and return types all come
+// from the XML and the interface signature; nothing is hardcoded.
+//
+// Run:
 //
 //	cd examples/dao && go run .
 
@@ -23,7 +27,7 @@ import (
 	"github.com/jizhuozhi/go-weave"
 )
 
-// UserDAO 是纯粹声明：没有实现结构体、没有 codegen。
+// UserDAO is pure declaration: no implementation struct, no codegen.
 type UserDAO interface {
 	GetUser(ctx context.Context, id int64) (*User, error)
 	ListUsers(ctx context.Context, limit int) ([]User, error)
@@ -34,14 +38,14 @@ type User struct {
 	Name string `json:"name"`
 }
 
-// rows 是"数据库"里的行，序列化成 JSON 存着。
+// rows is the "database": rows serialised as JSON.
 var rows = [][]byte{
 	[]byte(`{"id":1,"name":"ada"}`),
 	[]byte(`{"id":2,"name":"grace"}`),
 	[]byte(`{"id":3,"name":"ken"}`),
 }
 
-// ---- 阶段一：预编译 XML → 执行计划 ----
+// Phase one: compile the XML into execution plans.
 
 type mapperXML struct {
 	Selects []struct {
@@ -50,13 +54,14 @@ type mapperXML struct {
 	} `xml:"select"`
 }
 
-// stmt 是一条语句的预编译计划。绑定信息全部在预编译时从 SQL 里提取。
+// stmt is one statement's pre-compiled plan. Every binding detail is extracted
+// from the SQL at compile time.
 type stmt struct {
 	sql      string
-	params   []string // #{...} 按出现顺序
-	whereCol string   // WHERE 的列名（空 = 无 WHERE）
-	whereIdx int      // WHERE 参数在 params 里的索引（-1 = 无）
-	limitIdx int      // LIMIT 参数在 params 里的索引（-1 = 无）
+	params   []string // #{...} in order of appearance
+	whereCol string   // the WHERE column (empty = no WHERE)
+	whereIdx int      // index of the WHERE parameter in params (-1 = none)
+	limitIdx int      // index of the LIMIT parameter in params (-1 = none)
 }
 
 var (
@@ -90,7 +95,8 @@ func indexOf(xs []string, s string) int {
 	return -1
 }
 
-// compiled 是预编译好的映射。执行时只查内存计划，不再碰文件。
+// compiled is the pre-compiled mapping. Execution reads only the in-memory
+// plans and never touches the file again.
 type compiled struct {
 	path  string
 	stmts map[string]*stmt
@@ -104,7 +110,8 @@ func compileMapper(path string) (*compiled, error) {
 	return c, nil
 }
 
-// reload 重新读文件并预编译。部署时替换文件后显式调用即可热生效。
+// reload re-reads the file and re-compiles it. Replace the file in a deployment
+// and call this explicitly to pick the change up.
 func (c *compiled) reload() error {
 	raw, err := os.ReadFile(c.path)
 	if err != nil {
@@ -120,7 +127,8 @@ func (c *compiled) reload() error {
 	return nil
 }
 
-// run 通用执行：按 SQL 里的 WHERE 等值过滤 + LIMIT，逐行匹配。
+// run is the generic executor: equality filter on the SQL's WHERE column, then
+// LIMIT, matching row by row.
 func (st *stmt) run(bound []any) [][]byte {
 	var hit [][]byte
 	for _, r := range rows {
@@ -141,7 +149,8 @@ func (st *stmt) run(bound []any) [][]byte {
 	return hit
 }
 
-// unmarshal 按返回值类型反序列化：指针→单行，切片→多行。
+// unmarshal decodes by return type: a pointer yields a single row, a slice
+// many.
 func unmarshal(ret reflect.Type, rows [][]byte) (reflect.Value, error) {
 	switch ret.Kind() {
 	case reflect.Ptr:
@@ -166,7 +175,7 @@ func unmarshal(ret reflect.Type, rows [][]byte) (reflect.Value, error) {
 	return reflect.Value{}, fmt.Errorf("unsupported return type %s", ret)
 }
 
-// ---- 阶段二：用预编译计划安装 interceptor ----
+// Phase two: install the interceptor over the pre-compiled plans.
 
 func (c *compiled) interceptor() weave.Interceptor {
 	return func(inv *weave.Invocation) []reflect.Value {
@@ -174,7 +183,7 @@ func (c *compiled) interceptor() weave.Interceptor {
 		if st == nil {
 			return zeroResults(inv)
 		}
-		args := inv.Args()[1:] // [0] 是 ctx
+		args := inv.Args()[1:] // [0] is ctx
 		bound := make([]any, len(args))
 		for i, a := range args {
 			bound[i] = a.Interface()
@@ -210,13 +219,13 @@ func main() {
 	file := flag.String("file", "userdao.xml", "path to the mapper XML")
 	flag.Parse()
 
-	// 阶段一：预编译
+	// Phase one: pre-compile.
 	compiled, err := compileMapper(*file)
 	if err != nil {
 		panic(err)
 	}
 
-	// 阶段二：安装 interceptor
+	// Phase two: install the interceptor.
 	dao := weave.New[UserDAO](nil, compiled.interceptor())
 
 	ctx := context.Background()
