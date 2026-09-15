@@ -696,3 +696,168 @@ func BenchmarkSet500Rules(b *testing.B) {
 		inj.Set(rules...)
 	}
 }
+
+// --- fixtures for the tests below ------------------------------------------
+
+// Odd exercises result layouts the error rule has to cope with.
+type Odd interface {
+	// ErrFirst returns its error before its value, so finding the error
+	// result takes a scan rather than an assumption about position.
+	ErrFirst(id int) (error, int)
+}
+
+type oddImpl struct{}
+
+func (oddImpl) ErrFirst(id int) (error, int) { return nil, id }
+
+// --- matching --------------------------------------------------------------
+
+func TestAnInterfaceScopedWildcardCoversEveryMethod(t *testing.T) {
+	inj := New(Rule{Interface: "Repo", Rate: 1, Actions: []Action{Fail(errInjected)}})
+	repo := Wrap[Repo](inj, &repoImpl{})
+	greeter := Wrap[Greeter](inj, greeterImpl{})
+
+	if err := repo.Save(context.Background(), "x"); !errors.Is(err, errInjected) {
+		t.Fatalf("Save err = %v; want the fault", err)
+	}
+	if _, err := repo.GetUser(context.Background(), 1); !errors.Is(err, errInjected) {
+		t.Fatalf("GetUser err = %v; want the fault", err)
+	}
+	// Count has no error result, so there is nowhere for the fault to land and
+	// the call goes through.
+	if n := repo.Count(); n != 7 {
+		t.Fatalf("Count = %d; want the target's result", n)
+	}
+	// The rule is scoped to Repo, so Greeter is untouched.
+	if _, err := greeter.Hello("ada"); err != nil {
+		t.Fatalf("greeter err = %v; a rule scoped to Repo must not reach it", err)
+	}
+}
+
+func TestAnAnonymousInterfaceHasNoName(t *testing.T) {
+	// A rule scoped to an interface can only match a named one, because the
+	// condition is the type's name.
+	inj := New(Rule{Interface: "Repo", Rate: 1, Actions: []Action{Fail(errInjected)}})
+	anon := reflect.TypeOf((*interface{ Count() int })(nil)).Elem()
+	p := inj.WrapOf(anon, &repoImpl{})
+	if got := weave.As[interface{ Count() int }](p).Count(); got != 7 {
+		t.Fatalf("Count = %d; a rule scoped to Repo must not match an anonymous interface", got)
+	}
+
+	// A wildcard rule does match it.
+	inj.Set(Rule{Method: "Count", Rate: 1, Actions: []Action{Delay(20 * time.Millisecond)}})
+	start := time.Now()
+	if got := weave.As[interface{ Count() int }](p).Count(); got != 7 {
+		t.Fatalf("Count = %d; want the target's result", got)
+	}
+	if d := time.Since(start); d < 20*time.Millisecond {
+		t.Fatalf("call returned after %v; the wildcard rule did not apply", d)
+	}
+}
+
+// --- effects ---------------------------------------------------------------
+
+func TestDelaysStack(t *testing.T) {
+	r := Wrap[Repo](New(Rule{Method: "ListUsers", Rate: 1, Actions: []Action{
+		Delay(30 * time.Millisecond),
+		Delay(40 * time.Millisecond),
+	}}), &repoImpl{})
+
+	start := time.Now()
+	r.ListUsers(1)
+	if d := time.Since(start); d < 70*time.Millisecond {
+		t.Fatalf("call took %v; two delays must stack into 70ms", d)
+	}
+}
+
+func TestTheErrorResultNeedNotBeLast(t *testing.T) {
+	r := Wrap[Odd](New(Rule{Method: "ErrFirst", Rate: 1, Actions: []Action{Fail(errInjected)}}), oddImpl{})
+
+	err, n := r.ErrFirst(3)
+	if !errors.Is(err, errInjected) {
+		t.Fatalf("err = %v; want the injected error in the first result", err)
+	}
+	if n != 0 {
+		t.Fatalf("n = %d; want the zero value alongside it", n)
+	}
+}
+
+func TestPanicWithANonStringValue(t *testing.T) {
+	boom := errors.New("boom")
+	r := Wrap[Repo](New(Rule{Method: "Ping", Rate: 1, Actions: []Action{Panic(boom)}}), &repoImpl{})
+
+	defer func() {
+		if v := recover(); v != boom {
+			t.Fatalf("recovered %v; want the value the rule panics with", v)
+		}
+	}()
+	r.Ping()
+	t.Fatal("Ping returned; the injected panic did not fire")
+}
+
+func TestMaxCountAppliesOnTopOfSampling(t *testing.T) {
+	// The budget counts faults that actually happened, so it is checked
+	// against the sampler rather than instead of it.
+	r := Wrap[Repo](New(Rule{
+		Method:   "GetUser",
+		Rate:     0.5,
+		Actions:  []Action{Fail(errInjected)},
+		MaxCount: 2,
+	}), &repoImpl{})
+
+	faulted := 0
+	for i := 0; i < 200; i++ {
+		if _, err := r.GetUser(context.Background(), 1); err != nil {
+			faulted++
+		}
+	}
+	if faulted != 2 {
+		t.Fatalf("faulted %d calls; want exactly 2, the rule's whole budget", faulted)
+	}
+}
+
+// --- the rule set is the injector's, not the caller's ----------------------
+
+func TestRulesIsDeeplyIndependent(t *testing.T) {
+	inj := New(Rule{Method: "GetUser", Rate: 1, Actions: []Action{Fail(errInjected)}})
+	r := Wrap[Repo](inj, &repoImpl{})
+
+	got := inj.Rules()
+	got[0].Actions[0] = Delay(time.Second)
+	got[0].Actions = append(got[0].Actions, Panic("x"))
+
+	// A rebuild recompiles from the injector's own copy, which must be
+	// untouched by anything done to the one Rules handed out.
+	inj.Disable()
+	inj.Enable()
+	if _, err := r.GetUser(context.Background(), 1); !errors.Is(err, errInjected) {
+		t.Fatalf("err = %v; mutating the returned rule set changed what runs", err)
+	}
+}
+
+func TestSetCopiesTheActions(t *testing.T) {
+	rules := []Rule{{Method: "GetUser", Rate: 1, Actions: []Action{Fail(errInjected)}}}
+	inj := New(rules...)
+	r := Wrap[Repo](inj, &repoImpl{})
+
+	rules[0].Actions[0] = Delay(time.Second)
+
+	inj.Disable()
+	inj.Enable()
+	if _, err := r.GetUser(context.Background(), 1); !errors.Is(err, errInjected) {
+		t.Fatalf("err = %v; mutating the caller's slice changed what runs", err)
+	}
+}
+
+// --- targets ---------------------------------------------------------------
+
+func TestATypedNilTargetIsStillATarget(t *testing.T) {
+	// A nil pointer is a receiver, not the absence of one. Count does not
+	// dereference it, so the call has to reach it rather than turn into a mock.
+	var impl *repoImpl
+	r := Wrap[Repo](New(), impl)
+
+	if got := r.Count(); got != 7 {
+		t.Fatalf("Count = %d; a typed nil target was turned into a mock", got)
+	}
+}

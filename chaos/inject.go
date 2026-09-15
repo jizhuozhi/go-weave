@@ -99,12 +99,10 @@ func (b *binder) resolve() *binding {
 // that is out of its window or past its budget still owns the call — a less
 // specific rule does not step in — the call is simply not faulted.
 func (b *binder) intercept(c *weave.Invocation) []reflect.Value {
+	// Method.Index is the itab slot number and the table is built from the
+	// proxy's own method list, so the index is always in range.
 	bd := b.resolve()
-	i := c.Method.Index
-	if i >= len(bd.table) {
-		return c.Proceed()
-	}
-	e := &bd.table[i]
+	e := &bd.table[c.Method.Index]
 	r := e.rule
 	if r == nil {
 		return c.Proceed()

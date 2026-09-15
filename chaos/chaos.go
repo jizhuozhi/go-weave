@@ -173,7 +173,7 @@ func New(rules ...Rule) *Injector {
 	if err := validateSet(rules); err != nil {
 		panic(err)
 	}
-	in := &Injector{rules: append([]Rule(nil), rules...)}
+	in := &Injector{rules: cloneRules(rules)}
 	in.enabled = true
 	in.rebuild()
 	return in
@@ -191,7 +191,7 @@ func (in *Injector) Set(rules ...Rule) {
 	}
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	in.rules = append([]Rule(nil), rules...)
+	in.rules = cloneRules(rules)
 	in.enabled = true
 	in.rebuild()
 }
@@ -227,7 +227,22 @@ func (in *Injector) Enabled() bool {
 func (in *Injector) Rules() []Rule {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	return append([]Rule(nil), in.rules...)
+	return cloneRules(in.rules)
+}
+
+// cloneRules copies a rule set deeply enough that a caller cannot reach into
+// the injector's state through it. Copying the slice alone would leave the
+// Actions slices shared, and a caller who mutated one would change what the
+// next rebuild compiles — visible only after a later Disable or Enable.
+func cloneRules(rules []Rule) []Rule {
+	out := make([]Rule, len(rules))
+	copy(out, rules)
+	for i := range out {
+		if out[i].Actions != nil {
+			out[i].Actions = append([]Action(nil), out[i].Actions...)
+		}
+	}
+	return out
 }
 
 // Validate reports why a rule set cannot be used, or nil.
@@ -449,27 +464,14 @@ func (in *Injector) WrapOf(iface reflect.Type, target any) *weave.Proxy {
 		panic("chaos.WrapOf: not an interface type: " + iface.String())
 	}
 	b := &binder{in: in, ifaceName: iface.Name()}
-	p := weave.NewOf(iface, untypeNil(target), b.intercept)
+	// A nil interface reaches weave as an untyped nil and means "no target";
+	// Go flattens interfaces on assignment, so a nil T boxed into an any
+	// arrives here as nil rather than as a typed nil. A nil pointer, on the
+	// other hand, is a receiver, and stays one.
+	p := weave.NewOf(iface, target, b.intercept)
 	// The method list comes from the proxy rather than from reflect: it is in
 	// itab slot order, which is exactly what Invocation.Method.Index indexes.
 	// The proxy cannot have been called yet, so the write needs no barrier.
 	b.methods = p.Methods()
 	return p
-}
-
-// untypeNil turns a nil interface value into an untyped nil, which is how
-// weave spells "no target". An interface value compares equal to nil only when
-// it has no type at all, so a typed nil has to be detected through reflect.
-func untypeNil(target any) any {
-	if target == nil {
-		return nil
-	}
-	v := reflect.ValueOf(target)
-	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		if v.IsNil() {
-			return nil
-		}
-	}
-	return target
 }
