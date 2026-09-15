@@ -97,9 +97,11 @@ func TestLatencyIsSleptBeforeTheCall(t *testing.T) {
 		t.Fatalf("call returned after %v; want at least 60ms", d)
 	}
 
-	// The fault is scoped to the method it names.
+	// The fault is scoped to the method it names. The bound sits well under
+	// the 60ms the rule above injects and well over the microseconds a clean
+	// call takes, so neither a leak nor a stalled machine flips it.
 	start = time.Now()
-	if n := r.Count(); n != 7 || time.Since(start) > 20*time.Millisecond {
+	if n := r.Count(); n != 7 || time.Since(start) > 50*time.Millisecond {
 		t.Fatal("Count was affected by a rule naming ListUsers")
 	}
 }
@@ -107,19 +109,22 @@ func TestLatencyIsSleptBeforeTheCall(t *testing.T) {
 func TestLatencyStopsWhenTheContextIsDone(t *testing.T) {
 	r := Wrap[Repo](New(Rule{Method: "GetUser", Rate: 1, Actions: []Action{Delay(2 * time.Second)}}), &repoImpl{})
 
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	start := time.Now()
 	if _, err := r.GetUser(ctx, 1); err != nil {
 		t.Fatalf("err = %v; want the target's own result", err)
 	}
-	d := time.Since(start)
-	if d > 500*time.Millisecond {
+	if d := time.Since(start); d > 500*time.Millisecond {
 		t.Fatalf("call held for %v; the delay ignored context cancellation", d)
 	}
-	if d < 30*time.Millisecond {
-		t.Fatalf("call returned after %v; the delay did not run", d)
+	// The delay ran, and stopped when the context did rather than when its own
+	// two seconds were up. Asking the context is sound; timing the call
+	// against its deadline is not, because the deadline starts before the call
+	// does and the two clock readings are microseconds apart.
+	if err := ctx.Err(); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ctx err = %v; want the delay to have run until the deadline", err)
 	}
 }
 
