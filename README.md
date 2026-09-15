@@ -113,6 +113,31 @@ It targets the things gomock does badly — spies (partial mocks), mocking
 third-party interfaces without their source, and deciding behavior at runtime.
 See [mockito/README.md](mockito/README.md) for the full API.
 
+## Fault injection
+
+The [`chaos`](chaos) subpackage injects faults into any interface at runtime — a
+delay, an error or a panic, applied to a fraction of the calls that match a rule:
+
+```go
+import "github.com/jizhuozhi/go-weave/chaos"
+
+inj := chaos.New(
+    chaos.Rule{Method: "GetUser", Rate: 1, Latency: 500 * time.Millisecond},
+    chaos.Rule{Method: "ListUsers", Rate: 0.1, Err: errInjected},
+)
+defer inj.Disable()
+
+repo := chaos.Wrap[UserRepo](inj, realRepo)
+svc := chaos.Wrap[UserService](inj, realSvc)
+```
+
+One injector wraps any number of interfaces, and a rule naming a method an
+interface does not have is simply ignored for that interface — which is what
+lets a single rule set span a whole service. Installing the control point is
+kept separate from deciding what passes through it, so an injector can be
+created with no rules at all and its rule set replaced at any time. See
+[chaos/README.md](chaos/README.md) for the full API.
+
 ## How it works
 
 The full technical story — why each piece has to be the way it is — is in the
@@ -317,3 +342,4 @@ darwin/arm64; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | `examples/dao` | runnable declarative-DAO example |
 | `examples/spi` | SPI services with unified auth/trace advice (Spring-style) |
 | `mockito/` | Mockito-style mock/spy framework (`Mock`, `Spy`, `When`, `Verify`) |
+| `chaos/` | runtime fault injection over proxied interfaces (`Rule`, `Injector`, `Wrap`) |
