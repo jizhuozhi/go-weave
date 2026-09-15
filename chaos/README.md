@@ -7,8 +7,16 @@ needs no codegen.
 
 ```go
 inj := chaos.New(
-    chaos.Rule{Method: "GetUser", Rate: 1, Latency: 500 * time.Millisecond},
-    chaos.Rule{Method: "ListUsers", Rate: 0.1, Err: errInjected},
+    chaos.Rule{
+        Method:  "GetUser",
+        Rate:    1,
+        Actions: []chaos.Action{chaos.Delay(500 * time.Millisecond)},
+    },
+    chaos.Rule{
+        Method:  "ListUsers",
+        Rate:    0.1,
+        Actions: []chaos.Action{chaos.Fail(errInjected)},
+    },
 )
 defer inj.Disable()
 
@@ -46,22 +54,25 @@ that owns that connection.
 | `Interface` | interface type name to match; `""` matches every interface |
 | `Method` | method name to match; `""` matches every method |
 | `Rate` | fraction of matching calls that get the fault, in `(0, 1]` |
-| `Latency` | slept before the call proceeds |
-| `Err` | short-circuits: the target is not called and the error result is set |
-| `Panic` | panicked with instead of calling the target |
+| `Actions` | the faults to apply, in order; each is exactly one of a delay, an error or a panic |
 | `MaxCount` | stops the rule after that many faults, counted across every interface it owns; `0` means no limit |
 | `From`, `Until` | the window in which the rule is active; either may be the zero time for open-ended |
 
-At least one of `Latency`, `Err` and `Panic` must be set, and `Err` and `Panic`
-are mutually exclusive. `New` and `Set` panic on a rule set that breaks any of
-that, or whose conditions are not a strict partial order: a rule that could
-never fire, or two rules that both claim the same calls, are mistakes worth
-failing on at setup rather than discovering from a fault that never happened —
-or from two faults where one was expected.
+An `Action` is exactly one fault, built with `chaos.Delay`, `chaos.Fail` or
+`chaos.Panic`. A rule that wants several faults carries several actions, and
+they run in order. A delay stacks, so `Delay` may be followed by anything; the
+action that decides the call — `Fail` or `Panic` — has to be the last one,
+because nothing after it could run. A rule needs at least one action, and `Rate`
+must be in `(0, 1]` — `Disable` is how injection is turned off, not a rate of
+zero. `New` and `Set` panic on a rule set that breaks any of that, or whose
+conditions are not a strict partial order: a rule that could never fire, or two
+rules that both claim the same calls, are mistakes worth failing on at setup
+rather than discovering from a fault that never happened — or from two faults
+where one was expected.
 
-`Err` needs somewhere to go. It is written to the method's `error` result, and
-a method with no such result is unaffected by it — its other faults still
-apply.
+`Fail` needs somewhere to go. Its error is written to the method's `error`
+result, and a method with no such result is unaffected by it — its other
+actions still apply.
 
 `Interface` is matched against the interface type's name
 (`reflect.Type.Name`), so it is a short name like `"UserRepo"`, not a path. Two
@@ -123,9 +134,10 @@ into:
 
 ```json
 [
-  {"interface": "UserRepo", "method": "GetUser", "rate": 1, "latency": "500ms"},
-  {"method": "Save", "rate": 0.01, "error": "disk full", "maxCount": 100,
-   "from": "2026-09-15T10:00:00Z", "until": "2026-09-15T11:00:00Z"}
+  {"interface": "UserRepo", "method": "GetUser", "rate": 1,
+   "actions": [{"latency": "500ms"}]},
+  {"method": "Save", "rate": 0.01, "actions": [{"error": "disk full"}],
+   "maxCount": 100, "from": "2026-09-15T10:00:00Z", "until": "2026-09-15T11:00:00Z"}
 ]
 ```
 
@@ -134,9 +146,7 @@ into:
 | `interface` | interface type name to match; empty matches every interface |
 | `method` | method name to match; empty matches every method |
 | `rate` | fraction of matching calls, in `(0, 1]` — required, no default |
-| `latency` | Go duration string, such as `"500ms"` |
-| `error` | error message, injected wrapped in `ErrInjected` |
-| `panic` | value to panic with |
+| `actions` | the faults to apply, in order; each is exactly one of `{"latency": "500ms"}`, `{"error": "..."}` or `{"panic": "..."}` |
 | `maxCount` | stop after this many faults; `0` means no limit |
 | `from`, `until` | RFC3339 timestamps bounding the window |
 
@@ -238,7 +248,7 @@ global counter.
   injected panic reaches your code exactly as one from the target would. That
   is deliberate, and it means a panic fault is only as contained as the call
   site that catches it.
-- **`Err` only reaches an `error` result.** A method returning a concrete error
+- **`Fail` only reaches an `error` result.** A method returning a concrete error
   type, or no error at all, cannot carry an injected error.
 - **Matching is on names, and on nothing else.** A condition is an interface
   type name and a method name; there is no matching on arguments or on any

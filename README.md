@@ -122,8 +122,16 @@ delay, an error or a panic, applied to a fraction of the calls that match a rule
 import "github.com/jizhuozhi/go-weave/chaos"
 
 inj := chaos.New(
-    chaos.Rule{Method: "GetUser", Rate: 1, Latency: 500 * time.Millisecond},
-    chaos.Rule{Method: "ListUsers", Rate: 0.1, Err: errInjected},
+    chaos.Rule{
+        Method:  "GetUser",
+        Rate:    1,
+        Actions: []chaos.Action{chaos.Delay(500 * time.Millisecond)},
+    },
+    chaos.Rule{
+        Method:  "ListUsers",
+        Rate:    0.1,
+        Actions: []chaos.Action{chaos.Fail(errInjected)},
+    },
 )
 defer inj.Disable()
 
